@@ -22,7 +22,7 @@
 
 **无需安装 Python 环境，开箱即用！**
 
-**[⬇️ 点击下载 MiniRead v1.0.0](https://github.com/hellobigbug/miniread/releases/download/v1.0.0/MiniRead-v1.0.0-windows-x64.exe)**
+**[⬇️ 点击下载 MiniRead v1.0.1](https://github.com/hellobigbug/miniread/releases/download/v1.0.1/MiniRead-v1.0.1-windows-x64.exe)**
 
 下载后：
 
