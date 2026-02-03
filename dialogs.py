@@ -7,9 +7,9 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFontComboBox, QSpinBox, QSlider, QCheckBox, QColorDialog,
     QGroupBox, QFrame, QWidget, QListWidget, QListWidgetItem,
-    QAbstractItemView
+    QAbstractItemView, QApplication
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QTimer
 from PyQt5.QtGui import QFont, QColor, QPalette
 import os
 import time
@@ -27,7 +27,7 @@ class FontSettingsDialog(QDialog):
         super().__init__(parent)
 
         self.setWindowTitle("字体设置")
-        self.setFixedSize(400, 350)
+        self.setFixedSize(400, 450)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
 
         # 当前设置
@@ -50,6 +50,26 @@ class FontSettingsDialog(QDialog):
         font_family_layout = QHBoxLayout()
         font_family_layout.addWidget(QLabel("字体:"))
         self._font_combo = QFontComboBox()
+        self._font_combo.setStyleSheet("""
+            QFontComboBox {
+                background-color: #3D3D3D;
+                color: white;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 8px 4px;
+                min-height: 30px;
+            }
+            QFontComboBox::drop-down {
+                border: none;
+            }
+            QFontComboBox QAbstractItemView {
+                background-color: #3D3D3D;
+                color: white;
+                selection-background-color: #007ACC;
+                min-height: 30px;
+                padding: 8px;
+            }
+        """)
         self._font_combo.currentFontChanged.connect(self._on_font_changed)
         font_family_layout.addWidget(self._font_combo, 1)
         font_layout.addLayout(font_family_layout)
@@ -62,6 +82,23 @@ class FontSettingsDialog(QDialog):
         self._size_spin.setRange(8, 72)
         self._size_spin.setValue(16)
         self._size_spin.setSuffix(" px")
+        self._size_spin.setStyleSheet("""
+            QSpinBox {
+                background-color: #3D3D3D;
+                color: white;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 8px 4px;
+                min-height: 30px;
+            }
+            QSpinBox::up-button, QSpinBox::down-button {
+                background-color: #4D4D4D;
+                border: none;
+            }
+            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+                background-color: #5D5D5D;
+            }
+        """)
         self._size_spin.valueChanged.connect(self._on_size_changed)
         font_size_layout.addWidget(self._size_spin)
 
@@ -77,10 +114,22 @@ class FontSettingsDialog(QDialog):
         # 字体样式
         style_layout = QHBoxLayout()
         self._bold_check = QCheckBox("粗体")
+        self._bold_check.setStyleSheet("""
+            QCheckBox {
+                min-height: 30px;
+                padding: 8px;
+            }
+        """)
         self._bold_check.stateChanged.connect(self._on_style_changed)
         style_layout.addWidget(self._bold_check)
 
         self._italic_check = QCheckBox("斜体")
+        self._italic_check.setStyleSheet("""
+            QCheckBox {
+                min-height: 30px;
+                padding: 8px;
+            }
+        """)
         self._italic_check.stateChanged.connect(self._on_style_changed)
         style_layout.addWidget(self._italic_check)
 
@@ -102,6 +151,12 @@ class FontSettingsDialog(QDialog):
         color_layout.addWidget(self._color_preview)
 
         self._color_btn = QPushButton("选择颜色...")
+        self._color_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 16px;
+                padding: 8px 16px;
+            }
+        """)
         self._color_btn.clicked.connect(self._choose_color)
         color_layout.addWidget(self._color_btn)
 
@@ -131,14 +186,32 @@ class FontSettingsDialog(QDialog):
         button_layout.addStretch()
 
         self._reset_btn = QPushButton("重置默认")
+        self._reset_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 30px;
+                padding: 8px 16px;
+            }
+        """)
         self._reset_btn.clicked.connect(self._reset_to_default)
         button_layout.addWidget(self._reset_btn)
 
         self._cancel_btn = QPushButton("取消")
+        self._cancel_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 30px;
+                padding: 8px 16px;
+            }
+        """)
         self._cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(self._cancel_btn)
 
         self._apply_btn = QPushButton("应用")
+        self._apply_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 30px;
+                padding: 8px 16px;
+            }
+        """)
         self._apply_btn.clicked.connect(self._apply_settings)
         self._apply_btn.setDefault(True)
         button_layout.addWidget(self._apply_btn)
@@ -225,6 +298,7 @@ class FontSettingsDialog(QDialog):
     def get_color(self) -> QColor:
         """获取颜色"""
         return self._current_color
+
 
 
 class SpeedSettingsDialog(QDialog):
@@ -324,7 +398,7 @@ class DisplaySettingsDialog(QDialog):
         super().__init__(parent)
 
         self.setWindowTitle("显示设置")
-        self.setFixedSize(400, 280)
+        self.setFixedSize(450, 420)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
 
         self._current_bg_color = current_bg_color or QColor("#2D2D2D")
@@ -342,15 +416,23 @@ class DisplaySettingsDialog(QDialog):
         bg_layout = QHBoxLayout(bg_group)
 
         bg_layout.addWidget(QLabel("背景色:"))
+        bg_layout.setSpacing(15)
 
         self._bg_color_preview = QFrame()
-        self._bg_color_preview.setFixedSize(60, 30)
+        self._bg_color_preview.setFixedSize(80, 40)
         self._bg_color_preview.setFrameStyle(QFrame.Box | QFrame.Plain)
         self._bg_color_preview.setAutoFillBackground(True)
         self._update_bg_color_preview()
         bg_layout.addWidget(self._bg_color_preview)
 
         self._bg_color_btn = QPushButton("选择颜色...")
+        self._bg_color_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 20px;
+                padding: 10px 20px;
+                font-size: 14px;
+            }
+        """)
         self._bg_color_btn.clicked.connect(self._choose_bg_color)
         bg_layout.addWidget(self._bg_color_btn)
 
@@ -363,22 +445,36 @@ class DisplaySettingsDialog(QDialog):
 
         opacity_row = QHBoxLayout()
         opacity_row.addWidget(QLabel("透明度:"))
+        opacity_row.setSpacing(15)
 
         self._opacity_slider = QSlider(Qt.Horizontal)
         self._opacity_slider.setRange(1, 100)  # 最小1%，防止完全透明无法点击
         self._opacity_slider.setValue(int(self._current_opacity * 100))
+        self._opacity_slider.setStyleSheet("""
+            QSlider::handle:horizontal {
+                min-height: 20px;
+                width: 20px;
+            }
+        """)
         self._opacity_slider.valueChanged.connect(self._on_opacity_changed)
         opacity_row.addWidget(self._opacity_slider, 1)
 
         self._opacity_label = QLabel(f"{int(self._current_opacity * 100)}%")
-        self._opacity_label.setFixedWidth(40)
+        self._opacity_label.setFixedWidth(60)
+        self._opacity_label.setStyleSheet("""
+            QLabel {
+                min-height: 40px;
+                padding: 10px;
+                font-size: 14px;
+            }
+        """)
         opacity_row.addWidget(self._opacity_label)
 
         opacity_layout.addLayout(opacity_row)
 
         # 透明度提示
         hint_label = QLabel("提示: 1% 为几乎透明，100% 为完全不透明")
-        hint_label.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 11px;")
+        hint_label.setStyleSheet("color: rgba(255,255,255,0.8); font-size: 12px; padding: 8px 0;")
         opacity_layout.addWidget(hint_label)
 
         layout.addWidget(opacity_group)
@@ -388,7 +484,7 @@ class DisplaySettingsDialog(QDialog):
         preview_layout = QVBoxLayout(preview_group)
 
         self._preview_frame = QFrame()
-        self._preview_frame.setMinimumHeight(50)
+        self._preview_frame.setMinimumHeight(80)
         self._preview_frame.setStyleSheet(self._get_preview_style())
 
         preview_inner_layout = QHBoxLayout(self._preview_frame)
@@ -405,14 +501,35 @@ class DisplaySettingsDialog(QDialog):
         button_layout.addStretch()
 
         self._reset_btn = QPushButton("重置默认")
+        self._reset_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 40px;
+                padding: 10px 20px;
+                font-size: 14px;
+            }
+        """)
         self._reset_btn.clicked.connect(self._reset_to_default)
         button_layout.addWidget(self._reset_btn)
 
         self._cancel_btn = QPushButton("取消")
+        self._cancel_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 40px;
+                padding: 10px 20px;
+                font-size: 14px;
+            }
+        """)
         self._cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(self._cancel_btn)
 
         self._apply_btn = QPushButton("应用")
+        self._apply_btn.setStyleSheet("""
+            QPushButton {
+                min-height: 40px;
+                padding: 10px 20px;
+                font-size: 14px;
+            }
+        """)
         self._apply_btn.clicked.connect(self._apply_settings)
         self._apply_btn.setDefault(True)
         button_layout.addWidget(self._apply_btn)
@@ -839,3 +956,17 @@ class ConfirmationDialog(QDialog):
         if event.buttons() == Qt.LeftButton:
             self.move(event.globalPos() - self._drag_pos)
             event.accept()
+
+
+class ScreenColorPicker(QWidget):
+    """全屏取色器 - 点击屏幕任意位置获取颜色"""
+
+    color_picked = pyqtSignal(QColor)
+    picker_closed = pyqtSignal()
+
+    def __init__(self, initial_color=None):
+        super().__init__()
+
+        self._current_color = initial_color or QColor("#FFFFFF")
+        self._screenshot = None
+        self._magnifier_size = 150  # 放大镜大小
