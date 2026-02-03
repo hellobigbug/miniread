@@ -119,6 +119,12 @@ class LineTextWidget(QWidget):
         if max_length <= 0 or max_length >= len(text):
             return max_length
 
+        # 特殊处理：检查是否在双引号内（对话内容）
+        # 如果断点在双引号内，尝试延伸到右双引号之后
+        quote_result = self._handle_quote_break(text, max_length)
+        if quote_result != max_length:
+            return quote_result
+
         # 定义断行优先级（从高到低）
         # 优先级1: 句号、问号、感叹号等句子结束符
         sentence_end_marks = '。！？!?；;'
@@ -152,6 +158,51 @@ class LineTextWidget(QWidget):
                 return search_start + i + 1
 
         # 如果没有找到合适的断点，返回原始长度
+        return max_length
+
+    def _handle_quote_break(self, text: str, max_length: int) -> int:
+        """处理双引号内的断行 - 尽量保持对话完整
+
+        Args:
+            text: 待处理的文本
+            max_length: 最大可显示长度
+
+        Returns:
+            调整后的断点位置，如果不需要调整则返回max_length
+        """
+        # 支持的引号类型（中英文双引号）
+        left_quotes = '""'
+        right_quotes = '""'
+
+        # 检查max_length位置前是否有未闭合的左引号
+        text_before = text[:max_length]
+
+        # 统计左右引号数量
+        left_count = sum(text_before.count(q) for q in left_quotes)
+        right_count = sum(text_before.count(q) for q in right_quotes)
+
+        # 如果左引号多于右引号，说明在引号内
+        if left_count > right_count:
+            # 查找后续的右引号位置
+            remaining_text = text[max_length:]
+
+            # 在合理范围内查找右引号（最多延伸50%的max_length）
+            search_limit = min(len(remaining_text), int(max_length * 0.5))
+
+            for i in range(search_limit):
+                if remaining_text[i] in right_quotes:
+                    # 找到右引号，延伸到引号之后
+                    new_length = max_length + i + 1
+
+                    # 检查引号后是否紧跟标点符号，如果有则一起包含
+                    if new_length < len(text):
+                        next_char = text[new_length]
+                        if next_char in '。！？!?，、,；;：:':
+                            new_length += 1
+
+                    return new_length
+
+        # 如果不在引号内，或者找不到合适的右引号，返回原始长度
         return max_length
 
     def text(self) -> str:

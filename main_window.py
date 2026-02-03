@@ -65,10 +65,6 @@ class MainWindow(QMainWindow):
         self._config_save_timer.timeout.connect(self._save_config)
         self._config_save_timer.setSingleShot(True)
 
-        # 鼠标摇动检测相关
-        self._shake_positions = []
-        self._last_mouse_time = 0
-
         # 阅读位置保存优化
         self._page_turn_count = 0  # 翻页计数器
         self._last_saved_position = 0  # 上次保存的位置
@@ -325,27 +321,16 @@ class MainWindow(QMainWindow):
             # 显示恢复提示
             if restored:
                 progress = self._text_widget.getProgress()
-                self._tray_icon.showMessage(
-                    "已恢复阅读进度",
-                    f"已恢复到上次阅读位置 (进度: {int(progress * 100)}%)",
-                    QSystemTrayIcon.Information,
-                    2000
-                )
+                self._tray_icon.showMessage("已恢复阅读进度", f"已恢复到上次阅读位置 (进度: {int(progress * 100)}%)", QSystemTrayIcon.Information, 2000)
 
         except FileNotFoundError:
             QMessageBox.critical(self, "错误", f"文件不存在:\n{file_path}")
         except PermissionError:
             QMessageBox.critical(self, "错误", f"没有权限读取文件:\n{file_path}")
         except UnicodeDecodeError:
-            QMessageBox.critical(
-                self, "错误",
-                f"文件编码错误，无法读取:\n{file_path}\n\n建议：请确保文件是UTF-8编码"
-            )
+            QMessageBox.critical(self, "错误", f"文件编码错误，无法读取:\n{file_path}\n\n建议：请确保文件是UTF-8编码")
         except Exception as e:
-            QMessageBox.critical(
-                self, "错误",
-                f"无法打开文件:\n{file_path}\n\n错误详情: {str(e)}"
-            )
+            QMessageBox.critical(self, "错误", f"无法打开文件:\n{file_path}\n\n错误详情: {str(e)}")
 
     def _prev_line(self):
         """上一行"""
