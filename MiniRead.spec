@@ -99,6 +99,24 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+import platform
+
+# 构建带版本号和平台信息的后缀
+# 格式: MiniRead-v{版本号}-{平台}-{架构}.exe
+APP_VERSION = "1.0.0"
+system = platform.system().lower()  # windows/linux/darwin
+machine = platform.machine().lower()  # amd64/x86_64/arm64
+
+# 统一架构命名 (amd64 -> x64, x86_64 -> x64)
+if machine in ['amd64', 'x86_64']:
+    arch = 'x64'
+elif machine in ['arm64', 'aarch64']:
+    arch = 'arm64'
+else:
+    arch = machine
+
+exe_name = f'MiniRead-v{APP_VERSION}-{system}-{arch}'
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -106,7 +124,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='MiniRead',
+    name=exe_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
