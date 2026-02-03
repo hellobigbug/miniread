@@ -699,7 +699,6 @@ class MainWindow(QMainWindow):
         """创建文件菜单部分"""
         # 打开文件
         open_action = QAction("打开文件...", self)
-        open_action.setShortcut("Ctrl+O")
         open_action.triggered.connect(self._open_file)
         menu.addAction(open_action)
 
@@ -728,7 +727,6 @@ class MainWindow(QMainWindow):
 
         # 阅读目录
         library_action = QAction("阅读目录", self)
-        library_action.setShortcut("Ctrl+L")
         library_action.triggered.connect(self._show_library)
         menu.addAction(library_action)
 
@@ -736,7 +734,6 @@ class MainWindow(QMainWindow):
         """创建设置菜单部分"""
         # 字体设置
         font_action = QAction("字体设置...", self)
-        font_action.setShortcut("Ctrl+F")
         font_action.triggered.connect(self._show_font_settings)
         menu.addAction(font_action)
 
@@ -761,7 +758,6 @@ class MainWindow(QMainWindow):
 
         # 显示设置
         display_action = QAction("显示设置...", self)
-        display_action.setShortcut("Ctrl+D")
         display_action.triggered.connect(self._show_display_settings)
         menu.addAction(display_action)
 
@@ -809,13 +805,11 @@ class MainWindow(QMainWindow):
         """创建窗口操作菜单部分"""
         # 隐藏窗口
         hide_action = QAction("隐藏窗口", self)
-        hide_action.setShortcut("Ctrl+H")
         hide_action.triggered.connect(self._toggle_visibility)
         menu.addAction(hide_action)
 
         # 退出程序
         quit_action = QAction("退出程序", self)
-        quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self._confirm_close)
         menu.addAction(quit_action)
 

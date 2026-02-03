@@ -904,9 +904,8 @@ class ConfirmationDialog(QDialog):
         container = QFrame()
         container.setStyleSheet("""
             QFrame {
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #3A3A3A, stop:1 #2A2A2A);
-                border: 1px solid #555555;
+                background-color: #2D2D2D;
+                border: 1px solid #3D3D3D;
                 border-radius: 10px;
             }
         """)
@@ -955,6 +954,7 @@ class ConfirmationDialog(QDialog):
                 color: #CCCCCC;
                 padding: 0 20px;
                 font-size: 13px;
+                outline: none;
             }
             QPushButton:hover {
                 background-color: #3D3D3D;
@@ -963,6 +963,9 @@ class ConfirmationDialog(QDialog):
             }
             QPushButton:pressed {
                 background-color: #2D2D2D;
+            }
+            QPushButton:focus {
+                outline: none;
             }
         """)
         cancel_btn.clicked.connect(self.reject)
@@ -973,21 +976,23 @@ class ConfirmationDialog(QDialog):
         confirm_btn.setCursor(Qt.PointingHandCursor)
         confirm_btn.setStyleSheet("""
             QPushButton {
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #E53935, stop:1 #C62828);
+                background-color: #D32F2F;
                 border: none;
                 border-radius: 5px;
                 color: #FFFFFF;
                 padding: 0 24px;
                 font-size: 13px;
                 font-weight: bold;
+                outline: none;
             }
             QPushButton:hover {
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #EF5350, stop:1 #D32F2F);
+                background-color: #E53935;
             }
             QPushButton:pressed {
                 background-color: #B71C1C;
+            }
+            QPushButton:focus {
+                outline: none;
             }
         """)
         confirm_btn.clicked.connect(self.accept)
