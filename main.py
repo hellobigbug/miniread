@@ -7,7 +7,6 @@ MiniRead - Windows阅读工具
 - 单行滚动文本显示
 - 支持TXT、PDF、DOCX、EPUB等格式
 - 自定义字体和滚动速度
-- 全局快捷键支持
 - 阅读目录功能
 - 配置自动保存
 
@@ -21,19 +20,45 @@ import traceback
 import logging
 from pathlib import Path
 
-# 配置日志
-log_dir = Path.home() / '.miniread'
-log_dir.mkdir(exist_ok=True)
+# 配置日志 - 使用APPDATA目录避免权限问题
+def get_log_dir():
+    """获取日志目录，优先使用APPDATA"""
+    try:
+        # 优先使用APPDATA目录（Windows标准应用数据目录）
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            log_dir = Path(appdata) / 'MiniRead'
+        else:
+            # 回退到用户主目录
+            log_dir = Path.home() / '.miniread'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir
+    except Exception:
+        # 最后回退到临时目录
+        import tempfile
+        return Path(tempfile.gettempdir())
+
+log_dir = get_log_dir()
 log_file = log_dir / 'miniread.log'
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file, encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
+# 配置日志，添加异常处理防止日志写入失败导致程序崩溃
+try:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+except Exception as e:
+    # 如果文件日志配置失败，只用控制台日志
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
+    print(f"警告: 无法配置文件日志: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +76,8 @@ except ImportError as e:
 
 try:
     from main_window import MainWindow
-    from hotkeys import get_hotkey_manager, KEYBOARD_AVAILABLE
     from config import get_config
+    from styles import APP_STYLE
 except ImportError as e:
     logger.error(f"模块导入失败: {e}")
     print(f"错误: 无法导入必要模块。\n{e}")
@@ -82,12 +107,6 @@ class MiniReadApp:
             # 创建主窗口
             self.main_window = MainWindow()
 
-            # 快捷键管理器（延迟初始化）
-            self.hotkey_manager = None
-
-            # 延迟注册快捷键，避免阻塞启动
-            QTimer.singleShot(100, self._init_hotkeys)
-
             logger.info("MiniRead 应用初始化成功")
 
         except Exception as e:
@@ -95,289 +114,9 @@ class MiniReadApp:
             self._show_error("初始化失败", f"应用初始化时发生错误:\n{str(e)}")
             raise
 
-    def _init_hotkeys(self):
-        """延迟初始化快捷键"""
-        try:
-            if not KEYBOARD_AVAILABLE:
-                logger.warning("keyboard 模块不可用，全局快捷键功能已禁用")
-                return
-
-            self.hotkey_manager = get_hotkey_manager()
-            self._register_hotkeys()
-            logger.info("全局快捷键注册成功")
-
-        except Exception as e:
-            logger.error(f"快捷键初始化失败: {e}\n{traceback.format_exc()}")
-            # 快捷键失败不影响主程序运行
-            logger.warning("全局快捷键功能不可用，但程序将继续运行")
-
     def _set_style(self):
         """设置应用样式"""
-        style = """
-            QToolTip {
-                background-color: #2D2D2D;
-                color: white;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 5px;
-            }
-
-            QMenu {
-                background-color: #2D2D2D;
-                color: white;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 5px;
-            }
-
-            QMenu::item {
-                padding: 5px 20px;
-                border-radius: 3px;
-            }
-
-            QMenu::item:selected {
-                background-color: #3D3D3D;
-            }
-
-            QMessageBox {
-                background-color: #2D2D2D;
-                color: white;
-            }
-
-            QMessageBox QPushButton {
-                background-color: #3D3D3D;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                min-width: 60px;
-            }
-
-            QMessageBox QPushButton:hover {
-                background-color: #4D4D4D;
-            }
-
-            QDialog {
-                background-color: #2D2D2D;
-                color: white;
-            }
-
-            QGroupBox {
-                color: white;
-                border: 1px solid #555;
-                border-radius: 5px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-
-            QLabel {
-                color: white;
-            }
-
-            QPushButton {
-                background-color: #3D3D3D;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-            }
-
-            QPushButton:hover {
-                background-color: #4D4D4D;
-            }
-
-            QPushButton:pressed {
-                background-color: #5D5D5D;
-            }
-
-            QSpinBox, QDoubleSpinBox {
-                background-color: #3D3D3D;
-                color: white;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 5px;
-                selection-background-color: #007ACC;
-                selection-color: white;
-            }
-
-            QSpinBox::up-button, QDoubleSpinBox::up-button {
-                subcontrol-origin: border;
-                subcontrol-position: top right;
-                width: 20px;
-                border: none;
-                background-color: #4D4D4D;
-                border-top-right-radius: 4px;
-            }
-
-            QSpinBox::down-button, QDoubleSpinBox::down-button {
-                subcontrol-origin: border;
-                subcontrol-position: bottom right;
-                width: 20px;
-                border: none;
-                background-color: #4D4D4D;
-                border-bottom-right-radius: 4px;
-            }
-
-            QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
-            QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
-                background-color: #5D5D5D;
-            }
-
-            QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
-                width: 10px;
-                height: 10px;
-            }
-
-            QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
-                width: 10px;
-                height: 10px;
-            }
-
-            QLineEdit {
-                background-color: #3D3D3D;
-                color: white;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 5px;
-                selection-background-color: #007ACC;
-                selection-color: white;
-            }
-
-            QSlider::groove:horizontal {
-                height: 6px;
-                background: #3D3D3D;
-                border-radius: 3px;
-            }
-
-            QSlider::handle:horizontal {
-                background: #007ACC;
-                width: 16px;
-                margin: -5px 0;
-                border-radius: 8px;
-            }
-
-            QSlider::handle:horizontal:hover {
-                background: #1E90FF;
-            }
-
-            QCheckBox {
-                color: white;
-                spacing: 8px;
-            }
-
-            QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
-                border-radius: 4px;
-                border: 1px solid #555;
-                background-color: #3D3D3D;
-            }
-
-            QCheckBox::indicator:checked {
-                background-color: #007ACC;
-                border-color: #007ACC;
-            }
-
-            QFontComboBox {
-                background-color: #3D3D3D;
-                color: white;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 5px;
-            }
-
-            QFontComboBox::drop-down {
-                border: none;
-                width: 20px;
-            }
-
-            QFontComboBox QAbstractItemView {
-                background-color: #2D2D2D;
-                color: white;
-                selection-background-color: #007ACC;
-            }
-        """
-        self.app.setStyleSheet(style)
-
-    def _register_hotkeys(self):
-        """注册全局快捷键"""
-        try:
-            hotkeys = self.config.get("hotkeys", {})
-
-            # 显示/隐藏切换
-            self.hotkey_manager.register(
-                "toggle_visibility",
-                hotkeys.get("toggle_visibility", "ctrl+shift+r"),
-                self._safe_call(self.main_window._toggle_visibility)
-            )
-
-            # 下一行
-            self.hotkey_manager.register(
-                "next_line",
-                hotkeys.get("next_line", "ctrl+shift+space"),
-                self._safe_call(self.main_window._next_line)
-            )
-
-            # 上一行
-            self.hotkey_manager.register(
-                "prev_line",
-                hotkeys.get("prev_line", "ctrl+shift+b"),
-                self._safe_call(self.main_window._prev_line)
-            )
-
-            # 增大字号
-            self.hotkey_manager.register(
-                "increase_font",
-                hotkeys.get("increase_font", "ctrl+shift+up"),
-                self._safe_call(self.main_window.increase_font_size)
-            )
-
-            # 减小字号
-            self.hotkey_manager.register(
-                "decrease_font",
-                hotkeys.get("decrease_font", "ctrl+shift+down"),
-                self._safe_call(self.main_window.decrease_font_size)
-            )
-
-            # 下一行（方向键）
-            self.hotkey_manager.register(
-                "next_line_arrow",
-                hotkeys.get("next_line_arrow", "ctrl+shift+right"),
-                self._safe_call(self.main_window._next_line)
-            )
-
-            # 上一行（方向键）
-            self.hotkey_manager.register(
-                "prev_line_arrow",
-                hotkeys.get("prev_line_arrow", "ctrl+shift+left"),
-                self._safe_call(self.main_window._prev_line)
-            )
-
-            # 打开文件
-            self.hotkey_manager.register(
-                "open_file",
-                hotkeys.get("open_file", "ctrl+shift+o"),
-                self._safe_call(self.main_window._open_file)
-            )
-
-        except Exception as e:
-            logger.error(f"快捷键注册失败: {e}\n{traceback.format_exc()}")
-
-    def _safe_call(self, func):
-        """创建线程安全的回调函数"""
-        def wrapper():
-            try:
-                # 使用QTimer在主线程中执行
-                QTimer.singleShot(0, func)
-            except Exception as e:
-                logger.error(f"回调函数执行失败: {e}\n{traceback.format_exc()}")
-        return wrapper
+        self.app.setStyleSheet(APP_STYLE)
 
     def _show_error(self, title, message):
         """显示错误对话框"""
@@ -410,9 +149,7 @@ class MiniReadApp:
     def cleanup(self):
         """清理资源"""
         try:
-            if self.hotkey_manager:
-                self.hotkey_manager.unregister_all()
-                logger.info("快捷键已清理")
+            logger.info("应用清理完成")
         except Exception as e:
             logger.error(f"清理资源失败: {e}\n{traceback.format_exc()}")
 

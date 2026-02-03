@@ -12,8 +12,11 @@ beautifulsoup4>=4.12.0 # HTML内容解析（EPUB需要）
 lxml>=4.9.0            # XML解析
 
 # 系统交互
-pywin32>=305           # Windows API调用
-keyboard>=0.13.5       # 全局快捷键支持
+# pywin32>=305         # Windows API调用 - 已改用ctypes，无需安装
 
 # 工具库
 chardet>=5.0.0         # 文本编码检测
+charset-normalizer>=3.0.0  # 更优的编码检测（chardet替代品）
+
+# 打包工具
+pyinstaller>=5.0       # 打包为exe

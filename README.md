@@ -28,9 +28,8 @@
 
 1. 双击运行即可使用
 2. 首次运行可能需要几秒钟解压
-3. 建议以管理员权限运行（全局快捷键需要）
 
-> 💡 **提示**: 部分杀毒软件可能误报，请添加信任。文件大小约 51 MB。
+> 💡 **提示**: 部分杀毒软件可能误报，请添加信任。文件大小约 40 MB。
 
 ### 方式二：从源码运行
 
@@ -84,9 +83,7 @@ python main.py
 | **边缘拖拽** | 调整窗口大小 |
 | **右键**     | 打开功能菜单 |
 
-#### ⌨️ 键盘快捷键
-
-**窗口内快捷键：**
+#### ⌨️ 键盘操作
 
 | 快捷键                                | 功能                 |
 | ------------------------------------- | -------------------- |
@@ -96,19 +93,6 @@ python main.py
 | `End`                               | 跳转到末行           |
 | `PageUp`                            | 快速向上翻页（-10%） |
 | `PageDown`                          | 快速向下翻页（+10%） |
-
-**全局快捷键：**
-
-| 快捷键               | 功能          |
-| -------------------- | ------------- |
-| `Ctrl+Shift+R`     | 显示/隐藏窗口 |
-| `Ctrl+Shift+Space` | 下一行        |
-| `Ctrl+Shift+B`     | 上一行        |
-| `Ctrl+Shift+O`     | 打开文件      |
-| `Ctrl+Shift+↑`    | 增大字号      |
-| `Ctrl+Shift+↓`    | 减小字号      |
-| `Ctrl+Shift+→`    | 下一行        |
-| `Ctrl+Shift+←`    | 上一行        |
 
 ### 功能菜单
 
@@ -247,14 +231,6 @@ C:\Users\<用户名>\.miniread\config.json
 2. 如从源码运行，确保 Python 版本 >= 3.8
 3. 确保已正确安装依赖：`pip install -r requirements.txt`
 
-### Q: 全局快捷键不起作用？
-
-**A**:
-
-1. 以管理员权限运行程序
-2. 检查是否与其他程序快捷键冲突
-3. 确保安装了 `keyboard` 模块（源码运行时）
-
 ### Q: 文件显示乱码？
 
 **A**:
@@ -283,7 +259,6 @@ rmdir /s "%USERPROFILE%\.miniread"
 
 - 2分钟无操作会自动隐藏窗口
 - 双击系统托盘图标可重新显示
-- 或使用快捷键 `Ctrl+Shift+R`
 
 ### Q: 杀毒软件报毒？
 
@@ -305,7 +280,6 @@ rmdir /s "%USERPROFILE%\.miniread"
   - DOCX: python-docx
   - EPUB: ebooklib
   - HTML: BeautifulSoup4
-- **全局快捷键**: keyboard
 - **打包工具**: PyInstaller
 - **配置管理**: JSON
 
@@ -315,20 +289,19 @@ rmdir /s "%USERPROFILE%\.miniread"
 mini_read/
 ├── dist/
 │   └── MiniRead.exe         # 打包的可执行文件
-├── main.py                  # 程序入口
-├── main_window.py           # 主窗口
-├── scrolling_text.py        # 文本显示组件（智能断行）
+├── main.py                  # 主程序入口
+├── main_window.py           # 主窗口实现
+├── scrolling_text.py        # 文本显示组件
 ├── dialogs.py               # 对话框组件
 ├── config.py                # 配置管理
 ├── file_parser.py           # 文件解析器
-├── hotkeys.py               # 快捷键管理
-├── splash_screen.py         # 启动画面（已弃用）
+├── constants.py             # 常量定义
+├── styles.py                # 样式表定义
 ├── requirements.txt         # 依赖列表
 ├── run.bat                  # Windows启动脚本
 ├── MiniRead.spec            # PyInstaller 配置
-├── convert_icon.py          # 图标转换工具
 ├── icon.ico                 # 应用图标
-├── BUILD.md                 # 打包说明文档
+├── logo.png                 # Logo图片
 └── README.md                # 本文档
 ```
 
@@ -359,7 +332,26 @@ mini_read/
 **Bug修复：**
 
 - 🐛 修复语法错误导致的启动失败
-- 🔧 修复快捷键延迟初始化问题
+
+### v1.3.0 (2026-02-03)
+
+**新增功能：**
+
+- 📦 配置批量更新 - 减少IO次数
+- 💾 文件解析缓存 - 大文件重新打开更快
+- ⏰ 自动保存定时器 - 30秒自动保存阅读位置
+- 🧠 智能自动隐藏 - 鼠标在窗口内时不隐藏，全屏模式延长隐藏时间
+- 🔍 Ctrl+滚轮缩放字体 - 快速调节字体大小
+- 🎨 文件拖拽视觉反馈 - 拖拽时窗口显示蓝色边框
+- 📋 托盘菜单最近文件 - 右键托盘快速打开最近文件
+- 📁 常量集中管理 - 所有常量统一到constants.py
+- 🎨 样式表分离 - QSS样式集中到styles.py
+
+### v1.2.0 (2026-02-03)
+
+- 🔥 移除全局快捷键，简化代码结构
+- 🗑️ 删除未使用的模块文件
+- 📦 减小打包体积
 
 ### v1.0.0 (2024-01)
 
@@ -368,7 +360,6 @@ mini_read/
 - 📖 按行文本显示
 - 📁 多格式文件支持
 - 🎨 字体自定义功能
-- ⌨️ 全局快捷键支持
 - 💾 配置自动保存
 
 ---

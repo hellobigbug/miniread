@@ -25,7 +25,7 @@ class ConfigManager:
             "y": 100,
             "width": 800,
             "height": 60,
-            "opacity": 0.01,
+            "opacity": 0.5,  # 默认50%透明度
             "always_on_top": True
         },
         # 字体设置
@@ -50,16 +50,6 @@ class ConfigManager:
             "border_radius": 8,
             "show_controls": True
         },
-        # 快捷键设置
-        "hotkeys": {
-            "toggle_visibility": "ctrl+shift+r",
-            "toggle_scroll": "ctrl+shift+space",
-            "increase_font": "ctrl+shift+up",
-            "decrease_font": "ctrl+shift+down",
-            "increase_speed": "ctrl+shift+right",
-            "decrease_speed": "ctrl+shift+left",
-            "open_file": "ctrl+shift+o"
-        },
         # 最近文件
         "recent_files": [],
         # 最后阅读位置
@@ -71,15 +61,30 @@ class ConfigManager:
         "reading_history": {}
     }
 
+    @staticmethod
+    def get_default_config_dir() -> str:
+        """获取默认配置目录，优先使用APPDATA避免权限问题"""
+        try:
+            # 优先使用APPDATA目录（Windows标准应用数据目录）
+            appdata = os.environ.get('APPDATA')
+            if appdata:
+                return os.path.join(appdata, 'MiniRead')
+            # 回退到用户主目录
+            return os.path.join(os.path.expanduser("~"), ".miniread")
+        except Exception:
+            # 最后回退到临时目录
+            import tempfile
+            return os.path.join(tempfile.gettempdir(), 'miniread_config')
+
     def __init__(self, config_dir: Optional[str] = None):
         """
         初始化配置管理器
 
         Args:
-            config_dir: 配置文件目录，默认为用户目录下的.miniread
+            config_dir: 配置文件目录，默认为APPDATA或用户目录下的.miniread
         """
         if config_dir is None:
-            config_dir = os.path.join(os.path.expanduser("~"), ".miniread")
+            config_dir = self.get_default_config_dir()
 
         self.config_dir = Path(config_dir)
         self.config_file = self.config_dir / "config.json"
@@ -198,6 +203,29 @@ class ConfigManager:
 
         if auto_save:
             self.save()
+
+    def _set_without_save(self, key_path: str, value: Any) -> None:
+        """设置配置值但不保存（内部使用）"""
+        keys = key_path.split('.')
+        config = self.config
+
+        for key in keys[:-1]:
+            if key not in config:
+                config[key] = {}
+            config = config[key]
+
+        config[keys[-1]] = value
+
+    def batch_update(self, updates: Dict[str, Any]) -> None:
+        """
+        批量更新配置，只保存一次
+
+        Args:
+            updates: 配置更新字典，如 {"font.size": 18, "window.opacity": 0.8}
+        """
+        for key_path, value in updates.items():
+            self._set_without_save(key_path, value)
+        self.save()
 
     def add_recent_file(self, file_path: str, max_files: int = 10) -> None:
         """

@@ -5,11 +5,69 @@ MiniRead - 文件解析模块
 
 import os
 import re
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
+from functools import lru_cache
 
 import chardet
+
+# 文件解析缓存: {file_path: (mtime, content)}
+_parse_cache: Dict[str, Tuple[float, str]] = {}
+_cache_max_size = 10  # 最多缓存10个文件
+
+
+def parse_file_cached(file_path: str) -> Tuple[str, str]:
+    """
+    带缓存的文件解析，根据文件修改时间判断是否需要重新解析
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        (文件名, 文件内容)
+    """
+    global _parse_cache
+
+    # 清理过期缓存
+    current_time = time.time()
+    _parse_cache = {
+        k: v for k, v in _parse_cache.items()
+        if current_time - v[0] < 3600  # 1小时过期
+    }
+
+    # 获取文件修改时间
+    try:
+        mtime = os.path.getmtime(file_path)
+    except OSError:
+        # 文件不存在，直接解析（会抛出异常）
+        return parse_file(file_path)
+
+    # 检查缓存
+    if file_path in _parse_cache:
+        cached_mtime, cached_content = _parse_cache[file_path]
+        if cached_mtime == mtime:
+            # 缓存命中
+            return os.path.basename(file_path), cached_content
+
+    # 缓存未命中，解析文件
+    filename, content = parse_file(file_path)
+
+    # 保存到缓存
+    if len(_parse_cache) >= _cache_max_size:
+        # 移除最旧的缓存
+        oldest_key = min(_parse_cache.keys(), key=lambda k: _parse_cache[k][0])
+        del _parse_cache[oldest_key]
+
+    _parse_cache[file_path] = (mtime, content)
+    return filename, content
+
+
+def clear_parse_cache():
+    """清空文件解析缓存"""
+    global _parse_cache
+    _parse_cache.clear()
 
 
 class FileParser(ABC):
@@ -114,20 +172,44 @@ class TxtParser(FileParser):
         return content
 
     def _detect_encoding(self, file_path: str) -> str:
-        """检测文件编码"""
-        with open(file_path, 'rb') as f:
-            raw_data = f.read(10000)  # 读取前10KB用于检测
+        """检测文件编码 - 增强兼容性"""
+        try:
+            with open(file_path, 'rb') as f:
+                raw_data = f.read(10000)  # 读取前10KB用于检测
 
-        result = chardet.detect(raw_data)
-        encoding = result.get('encoding', 'utf-8')
+            # 先尝试用charset-normalizer（更准确）
+            try:
+                from charset_normalizer import detect as cn_detect
+                result = cn_detect(raw_data)
+                if result and result.get('encoding'):
+                    encoding = result['encoding']
+                else:
+                    raise ValueError("charset-normalizer检测失败")
+            except Exception:
+                # 回退到chardet
+                result = chardet.detect(raw_data)
+                encoding = result.get('encoding') if result else None
 
-        # 处理一些常见的编码别名
-        encoding_map = {
-            'gb2312': 'gbk',
-            'ascii': 'utf-8',
-        }
+            # 处理一些常见的编码别名和兼容性问题
+            encoding_map = {
+                'gb2312': 'gbk',      # GB2312是GBK的子集
+                'gb18030': 'gbk',     # GB18030兼容GBK
+                'ascii': 'utf-8',     # ASCII是UTF-8的子集
+                'iso-8859-1': 'gbk',  # 中文文件被误识别为latin-1时尝试gbk
+                'windows-1252': 'gbk', # 同上
+            }
 
-        return encoding_map.get(encoding.lower(), encoding) if encoding else 'utf-8'
+            if encoding:
+                encoding_lower = encoding.lower()
+                # 如果是中文编码别名，映射到gbk
+                if encoding_lower in encoding_map:
+                    return encoding_map[encoding_lower]
+                return encoding
+            else:
+                return 'utf-8'
+        except Exception:
+            # 任何异常都回退到utf-8
+            return 'utf-8'
 
     def _clean_text(self, text: str) -> str:
         """清理文本，保留换行符"""

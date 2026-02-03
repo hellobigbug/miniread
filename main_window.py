@@ -6,6 +6,8 @@ MiniRead - 主窗口
 import sys
 import os
 import time
+import ctypes
+from ctypes import wintypes
 from typing import Optional
 
 from PyQt5.QtWidgets import (
@@ -23,6 +25,29 @@ from scrolling_text import LineTextWidget
 from dialogs import FontSettingsDialog, DisplaySettingsDialog, LibraryDialog, ConfirmationDialog
 from file_parser import parse_file, FileParser
 from config import get_config
+
+
+# ctypes替代pywin32 - 无需额外依赖
+class Win32API:
+    """使用ctypes调用Windows API，替代pywin32"""
+
+    @staticmethod
+    def get_foreground_window() -> int:
+        """获取当前前台窗口句柄"""
+        try:
+            return ctypes.windll.user32.GetForegroundWindow()
+        except Exception:
+            return 0
+
+    @staticmethod
+    def get_window_rect(hwnd: int) -> tuple:
+        """获取窗口矩形区域 (left, top, right, bottom)"""
+        try:
+            rect = wintypes.RECT()
+            ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            return (rect.left, rect.top, rect.right, rect.bottom)
+        except Exception:
+            return (0, 0, 0, 0)
 
 
 class MainWindow(QMainWindow):
@@ -55,6 +80,9 @@ class MainWindow(QMainWindow):
         self._resize_start_pos = QPoint()
         self._resize_start_geometry = None
 
+        # 拖拽高亮状态
+        self._drag_highlight_active = False
+
         # 窗口自动隐藏相关
         self._window_hide_timer = QTimer(self)
         self._window_hide_timer.timeout.connect(self._auto_hide_window)
@@ -68,6 +96,11 @@ class MainWindow(QMainWindow):
         # 阅读位置保存优化
         self._page_turn_count = 0  # 翻页计数器
         self._last_saved_position = 0  # 上次保存的位置
+
+        # 自动保存定时器（30秒保存一次阅读位置）
+        self._auto_save_timer = QTimer(self)
+        self._auto_save_timer.timeout.connect(self._auto_save_position)
+        self._auto_save_timer.start(30000)  # 30秒
 
         # 初始化UI（轻量级，不做耗时操作）
         self._init_window()
@@ -107,8 +140,26 @@ class MainWindow(QMainWindow):
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-        # 允许窗口接收键盘焦点
+        # 允许窗口接收键盘焦点，但移除虚线框
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setStyleSheet("""
+            QMainWindow {
+                outline: none;
+            }
+            QWidget {
+                outline: none;
+            }
+            QLabel {
+                outline: none;
+            }
+            QPushButton {
+                outline: none;
+            }
+            QPushButton:focus {
+                outline: none;
+                border: none;
+            }
+        """)
 
         # 启用鼠标跟踪
         self.setMouseTracking(True)
@@ -162,25 +213,10 @@ class MainWindow(QMainWindow):
         self._tray_icon.setToolTip("MiniRead - 阅读工具")
 
         # 创建托盘菜单
-        tray_menu = QMenu()
+        self._tray_menu = QMenu()  # 保存为实例变量，方便更新
+        self._update_tray_menu()
 
-        show_action = QAction("显示/隐藏", self)
-        show_action.triggered.connect(self._toggle_visibility)
-        tray_menu.addAction(show_action)
-
-        tray_menu.addSeparator()
-
-        open_action = QAction("打开文件", self)
-        open_action.triggered.connect(self._open_file)
-        tray_menu.addAction(open_action)
-
-        tray_menu.addSeparator()
-
-        quit_action = QAction("退出", self)
-        quit_action.triggered.connect(self._quit_app)
-        tray_menu.addAction(quit_action)
-
-        self._tray_icon.setContextMenu(tray_menu)
+        self._tray_icon.setContextMenu(self._tray_menu)
         self._tray_icon.activated.connect(self._on_tray_activated)
 
         # 设置图标（使用默认图标）
@@ -188,6 +224,41 @@ class MainWindow(QMainWindow):
             self.style().SP_ComputerIcon
         ))
         self._tray_icon.show()
+
+    def _update_tray_menu(self):
+        """更新托盘菜单（显示最近文件）"""
+        self._tray_menu.clear()
+
+        # 显示/隐藏
+        show_action = QAction("显示/隐藏", self)
+        show_action.triggered.connect(self._toggle_visibility)
+        self._tray_menu.addAction(show_action)
+
+        self._tray_menu.addSeparator()
+
+        # 最近文件
+        recent_files = self.config.get_recent_files()[:3]  # 最多3个
+        if recent_files:
+            self._tray_menu.addAction("最近文件:")
+            for file_path in recent_files:
+                if os.path.exists(file_path):
+                    filename = os.path.basename(file_path)
+                    action = QAction(f"  {filename}", self)
+                    action.triggered.connect(lambda checked, fp=file_path: self._load_file(fp))
+                    self._tray_menu.addAction(action)
+            self._tray_menu.addSeparator()
+
+        # 打开文件
+        open_action = QAction("打开文件...", self)
+        open_action.triggered.connect(self._open_file)
+        self._tray_menu.addAction(open_action)
+
+        self._tray_menu.addSeparator()
+
+        # 退出
+        quit_action = QAction("退出", self)
+        quit_action.triggered.connect(self._quit_app)
+        self._tray_menu.addAction(quit_action)
 
     def _load_config(self):
         """加载配置"""
@@ -309,6 +380,9 @@ class MainWindow(QMainWindow):
             # 添加到最近文件
             self.config.add_recent_file(file_path)
 
+            # 更新托盘菜单（显示最近文件）
+            self._update_tray_menu()
+
             # 立即保存阅读历史（确保文件出现在阅读目录中）
             self.config.save_reading_position(
                 file_path,
@@ -358,8 +432,18 @@ class MainWindow(QMainWindow):
                 self._last_saved_position = current_pos
                 self._page_turn_count = 0
 
+    def _auto_save_position(self):
+        """自动保存阅读位置（定时器调用）"""
+        if not self._current_file:
+            return
+
+        current_pos = self._text_widget.getCurrentCharIndex()
+        if current_pos != self._last_saved_position:
+            self.config.save_reading_position(self._current_file, current_pos)
+            self._last_saved_position = current_pos
+
     def _toggle_scroll(self):
-        """切换下一行（兼容旧快捷键）"""
+        """切换下一行"""
         self._next_line()
 
     def _on_progress_changed(self, progress: float):
@@ -485,11 +569,40 @@ class MainWindow(QMainWindow):
         self._window_hide_timer.start(self.WINDOW_HIDE_TIMEOUT)
 
     def _auto_hide_window(self):
-        """自动隐藏窗口（2分钟无操作）"""
-        if not self._is_hidden:
-            self.hide()
-            self._is_hidden = True
-            self.visibility_changed.emit(False)
+        """自动隐藏窗口（2分钟无操作）- 智能检测"""
+        if self._is_hidden:
+            return
+
+        # 智能检测：如果鼠标在窗口内，不隐藏
+        cursor_pos = self.mapFromGlobal(QCursor.pos())
+        if self.rect().contains(cursor_pos):
+            # 鼠标在窗口内，重置定时器
+            self._window_hide_timer.start(self.WINDOW_HIDE_TIMEOUT)
+            return
+
+        # 检查是否有全屏应用运行（游戏/视频模式）
+        try:
+            # 使用ctypes替代pywin32，无需额外依赖
+            foreground_window = Win32API.get_foreground_window()
+            if foreground_window:
+                # 检查是否全屏
+                rect = Win32API.get_window_rect(foreground_window)
+                screen_width = QApplication.primaryScreen().size().width()
+                screen_height = QApplication.primaryScreen().size().height()
+
+                # 如果前台窗口是全屏且不是本窗口，延长隐藏时间
+                if (rect[2] - rect[0] >= screen_width and
+                    rect[3] - rect[1] >= screen_height):
+                    # 全屏模式，延长到5分钟
+                    self._window_hide_timer.start(300000)
+                    return
+        except Exception:
+            pass
+
+        # 执行隐藏
+        self.hide()
+        self._is_hidden = True
+        self.visibility_changed.emit(False)
 
     def _detect_shake(self, pos, current_time: int):
         """检测鼠标摇动 - 优化算法减少计算量
@@ -558,8 +671,11 @@ class MainWindow(QMainWindow):
 
         painter.fillPath(path, QBrush(bg_color))
 
-        # 绘制边框
-        painter.setPen(QPen(QColor(100, 100, 100, 100), 1))
+        # 绘制边框（拖拽高亮时显示蓝色边框）
+        if self._drag_highlight_active:
+            painter.setPen(QPen(QColor(0, 122, 204), 3))  # 蓝色高亮边框
+        else:
+            painter.setPen(QPen(QColor(100, 100, 100, 100), 1))
         painter.drawPath(path)
 
     def _get_resize_edge(self, pos):
@@ -825,25 +941,6 @@ class MainWindow(QMainWindow):
         help_menu = menu.addMenu("操作说明")
         help_menu.setStyleSheet(self._create_menu_stylesheet())
 
-        # 键盘操作说明
-        keyboard_section = QAction("键盘操作", self)
-        keyboard_section.setEnabled(False)
-        help_menu.addAction(keyboard_section)
-
-        keyboard_shortcuts = [
-            ("空格 / 回车", "下一行"),
-            ("方向键 ↑↓", "上/下一行"),
-            ("方向键 ←→", "上/下一行"),
-            ("Home / End", "首行/末行"),
-            ("PageUp / PageDown", "快速翻页 (±10%)")
-        ]
-        for key, desc in keyboard_shortcuts:
-            action = QAction(f"  {key} → {desc}", self)
-            action.setEnabled(False)
-            help_menu.addAction(action)
-
-        help_menu.addSeparator()
-
         # 鼠标操作说明
         mouse_section = QAction("鼠标操作", self)
         mouse_section.setEnabled(False)
@@ -929,10 +1026,21 @@ class MainWindow(QMainWindow):
             super().keyPressEvent(event)
 
     def wheelEvent(self, event):
-        """鼠标滚轮 - 翻页"""
+        """鼠标滚轮 - 翻页 / Ctrl+滚轮缩放字体"""
         # 重置窗口隐藏定时器
         self._reset_window_hide_timer()
 
+        # Ctrl+滚轮 = 缩放字体
+        if event.modifiers() == Qt.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self._increase_font_size()
+            elif delta < 0:
+                self._decrease_font_size()
+            event.accept()
+            return
+
+        # 普通滚轮 = 翻页
         delta = event.angleDelta().y()
         if delta > 0:
             self._prev_line()  # 向上滚动 = 上一行
@@ -940,19 +1048,56 @@ class MainWindow(QMainWindow):
             self._next_line()  # 向下滚动 = 下一行
         event.accept()
 
+    def _increase_font_size(self):
+        """增大字体"""
+        font = self._text_widget.font()
+        size = font.pointSize()
+        if size < 72:
+            font.setPointSize(size + 1)
+            self._text_widget.setFont(font)
+            self._save_config()
+
+    def _decrease_font_size(self):
+        """减小字体"""
+        font = self._text_widget.font()
+        size = font.pointSize()
+        if size > 8:
+            font.setPointSize(size - 1)
+            self._text_widget.setFont(font)
+            self._save_config()
+
     def dragEnterEvent(self, event):
-        """拖拽进入事件"""
+        """拖拽进入事件 - 添加视觉反馈"""
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
+            # 视觉反馈：改变窗口边框
+            self._set_drag_highlight(True)
+
+    def dragLeaveEvent(self, event):
+        """拖拽离开事件 - 恢复样式"""
+        self._set_drag_highlight(False)
 
     def dropEvent(self, event):
         """拖拽放下事件"""
+        # 恢复样式
+        self._set_drag_highlight(False)
+
         urls = event.mimeData().urls()
         if urls:
             file_path = urls[0].toLocalFile()
             if file_path:
                 self._load_file(file_path)
                 event.acceptProposedAction()
+
+    def _set_drag_highlight(self, active: bool):
+        """设置拖拽高亮效果"""
+        if active:
+            # 拖拽进入时的高亮样式
+            self._drag_highlight_active = True
+            self.update()  # 触发重绘
+        else:
+            self._drag_highlight_active = False
+            self.update()
 
     def closeEvent(self, event):
         """窗口关闭事件"""

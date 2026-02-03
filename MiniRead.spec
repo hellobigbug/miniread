@@ -1,13 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
-# MiniRead PyInstaller 配置文件（增强兼容性版本）
+# MiniRead PyInstaller 配置文件（修复兼容性问题版本）
+
+import sys
+import os
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 block_cipher = None
+
+# 收集PyQt5平台插件和动态库 - 修复Qt平台插件缺失问题
+qt_datas = collect_data_files('PyQt5', subdir='Qt5/plugins/platforms')
+qt_binaries = collect_dynamic_libs('PyQt5')
+
+# 注意：已改用ctypes替代pywin32，无需收集pywin32动态库
+# 保留ctypes相关导入即可
+
+# 合并所有二进制文件
+all_binaries = qt_binaries
+
+# 合并所有数据文件
+all_datas = qt_datas
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
-    datas=[],
+    binaries=all_binaries,
+    datas=all_datas,
     hiddenimports=[
         # PyQt5 核心模块
         'PyQt5.QtCore',
@@ -28,19 +45,27 @@ a = Analysis(
         'lxml',
         'lxml.etree',
         'lxml._elementpath',
+        'lxml.html',
+        'lxml.html.clean',
+        'lxml.html.defs',
+        'html.parser',
+        'xml.etree.ElementTree',
+        'xml.etree.cElementTree',
 
-        # 系统交互
-        'keyboard',
+        # 工具库
         'chardet',
         'chardet.universaldetector',
+        'charset_normalizer',
 
-        # Windows API
-        'win32api',
-        'win32con',
-        'win32gui',
-        'pywintypes',
-        'win32com',
-        'win32com.client',
+        # Windows API - 已改用ctypes，无需pywin32
+        # 'win32api',
+        # 'win32con',
+        # 'win32gui',
+        # 'pywintypes',
+        # 'win32com',
+        # 'win32com.client',
+        # 'win32com.client.dynamic',
+        # 'pythoncom',
 
         # 标准库（确保包含）
         'logging',
@@ -48,6 +73,8 @@ a = Analysis(
         'pathlib',
         'json',
         'traceback',
+        'ctypes',
+        'ctypes.wintypes',
     ],
     hookspath=[],
     hooksconfig={},
@@ -60,6 +87,9 @@ a = Analysis(
         'scipy',
         'IPython',
         'notebook',
+        'tkinter',
+        'PySide2',
+        'PySide6',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -83,14 +113,14 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # 不显示控制台窗口（GUI应用）
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon.ico',  # 应用程序图标
-    version_file=None,
-    uac_admin=False,  # 不强制要求管理员权限
+    icon='icon.ico',
+    version_file='MiniRead_version.txt',  # 版本信息文件
+    uac_admin=False,  # 不需要管理员权限
     uac_uiaccess=False,
 )

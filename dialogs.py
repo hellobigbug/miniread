@@ -34,6 +34,47 @@ class FontSettingsDialog(QDialog):
         self._current_font = current_font or QFont("Microsoft YaHei", 16)
         self._current_color = current_color or QColor("#FFFFFF")
 
+        # 移除焦点虚线框
+        self.setStyleSheet("""
+            QDialog {
+                outline: none;
+            }
+            QPushButton {
+                outline: none;
+            }
+            QPushButton:focus {
+                outline: none;
+                border: none;
+            }
+            QCheckBox {
+                outline: none;
+            }
+            QCheckBox:focus {
+                outline: none;
+            }
+            QSlider {
+                outline: none;
+            }
+            QSlider:focus {
+                outline: none;
+            }
+            QSpinBox {
+                outline: none;
+            }
+            QSpinBox:focus {
+                outline: none;
+            }
+            QFontComboBox {
+                outline: none;
+            }
+            QFontComboBox:focus {
+                outline: none;
+            }
+            QGroupBox {
+                outline: none;
+            }
+        """)
+
         self._init_ui()
         self._load_current_settings()
 
@@ -446,6 +487,29 @@ class DisplaySettingsDialog(QDialog):
         self._current_bg_color = current_bg_color or QColor("#2D2D2D")
         self._current_opacity = current_opacity
 
+        # 移除焦点虚线框
+        self.setStyleSheet("""
+            QDialog {
+                outline: none;
+            }
+            QPushButton {
+                outline: none;
+            }
+            QPushButton:focus {
+                outline: none;
+                border: none;
+            }
+            QSlider {
+                outline: none;
+            }
+            QSlider:focus {
+                outline: none;
+            }
+            QGroupBox {
+                outline: none;
+            }
+        """)
+
         self._init_ui()
 
     def _init_ui(self):
@@ -652,6 +716,29 @@ class LibraryDialog(QDialog):
         self._is_dragging = False
         self._drag_position = QPoint()
 
+        # 移除焦点虚线框
+        self.setStyleSheet("""
+            QDialog {
+                outline: none;
+            }
+            QPushButton {
+                outline: none;
+            }
+            QPushButton:focus {
+                outline: none;
+                border: none;
+            }
+            QListWidget {
+                outline: none;
+            }
+            QListWidget:focus {
+                outline: none;
+            }
+            QLabel {
+                outline: none;
+            }
+        """)
+
         self._init_ui()
         self._load_history()
 
@@ -712,6 +799,7 @@ class LibraryDialog(QDialog):
         self._list_widget = QListWidget()
         self._list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
         self._list_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self._list_widget.setFocusPolicy(Qt.NoFocus)  # 移除焦点虚线框
         self._list_widget.setStyleSheet("""
             QListWidget {
                 background-color: #1E1E1E;
@@ -826,6 +914,10 @@ class LibraryDialog(QDialog):
             reverse=True
         )
 
+        # 限制显示数量，避免内存占用过大
+        max_display = 50
+        displayed = 0
+
         for file_path, data in sorted_files:
             if not os.path.exists(file_path):
                 continue
@@ -844,7 +936,12 @@ class LibraryDialog(QDialog):
 
             item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, file_path)
+            item.setData(Qt.UserRole + 1, filename)  # 只存文件名，不存完整路径
             self._list_widget.addItem(item)
+
+            displayed += 1
+            if displayed >= max_display:
+                break
 
         if self._list_widget.count() > 0:
             self._list_widget.setCurrentRow(0)
@@ -893,6 +990,23 @@ class ConfirmationDialog(QDialog):
         self._title = title
         self._content = content
         self._drag_pos = QPoint()
+
+        # 移除焦点虚线框
+        self.setStyleSheet("""
+            QDialog {
+                outline: none;
+            }
+            QPushButton {
+                outline: none;
+            }
+            QPushButton:focus {
+                outline: none;
+                border: none;
+            }
+            QLabel {
+                outline: none;
+            }
+        """)
 
         self._init_ui()
 
