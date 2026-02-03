@@ -1,0 +1,19 @@
+# MiniRead - Windows阅读辅助工具依赖
+# Python 3.8+
+
+# GUI框架
+PyQt5>=5.15.0
+
+# 文件格式支持
+PyPDF2>=3.0.0          # PDF文件解析
+python-docx>=0.8.11    # DOCX文件解析
+EbookLib>=0.18         # EPUB文件解析
+beautifulsoup4>=4.12.0 # HTML内容解析（EPUB需要）
+lxml>=4.9.0            # XML解析
+
+# 系统交互
+pywin32>=305           # Windows API调用
+keyboard>=0.13.5       # 全局快捷键支持
+
+# 工具库
+chardet>=5.0.0         # 文本编码检测
