@@ -25,7 +25,6 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QTimer, QCoreApplication
 from PyQt5.QtGui import QFont
 
-from splash_screen import SplashScreen
 from main_window import MainWindow
 from hotkeys import get_hotkey_manager
 from config import get_config
@@ -44,37 +43,25 @@ class MiniReadApp:
         default_font = QFont("Microsoft YaHei", 9)
         self.app.setFont(default_font)
 
-        # 显示启动画面
-        self.splash = SplashScreen()
-        self.splash.show()
-        self.app.processEvents()
-
-        # 设置应用样式
-        self.splash.show_message("正在加载样式...")
-        self.app.processEvents()
+        # 快速设置应用样式（不显示启动画面）
         self._set_style()
 
         # 配置管理器
-        self.splash.show_message("正在加载配置...")
-        self.app.processEvents()
         self.config = get_config()
 
         # 创建主窗口
-        self.splash.show_message("正在初始化界面...")
-        self.app.processEvents()
         self.main_window = MainWindow()
 
-        # 快捷键管理器
-        self.splash.show_message("正在注册快捷键...")
-        self.app.processEvents()
+        # 快捷键管理器（延迟初始化）
+        self.hotkey_manager = None
+
+        # 延迟注册快捷键，避免阻塞启动
+        QTimer.singleShot(100, self._init_hotkeys)
+
+    def _init_hotkeys(self):
+        """延迟初始化快捷键"""
         self.hotkey_manager = get_hotkey_manager()
-
-        # 注册快捷键
         self._register_hotkeys()
-
-        # 启动完成
-        self.splash.show_message("启动完成！")
-        self.app.processEvents()
 
     def _set_style(self):
         """设置应用样式"""
@@ -339,10 +326,7 @@ class MiniReadApp:
 
     def run(self) -> int:
         """运行应用程序"""
-        # 关闭启动画面
-        QTimer.singleShot(500, self.splash.close)
-
-        # 显示主窗口
+        # 直接显示主窗口（无启动画面延迟）
         self.main_window.show()
 
         # 运行事件循环
@@ -350,7 +334,8 @@ class MiniReadApp:
 
     def cleanup(self):
         """清理资源"""
-        self.hotkey_manager.unregister_all()
+        if self.hotkey_manager:
+            self.hotkey_manager.unregister_all()
 
 
 def main():

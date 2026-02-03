@@ -110,18 +110,30 @@ class LineTextWidget(QWidget):
 
         # 如果找到了可显示的字符数，尝试在标点符号处断行
         if result > 0:
-            result = self._find_best_break_point(text, result)
+            result = self._find_best_break_point(text, result, fm, available_width)
 
         return result
 
-    def _find_best_break_point(self, text: str, max_length: int) -> int:
+    def _find_best_break_point(self, text: str, max_length: int, fm: QFontMetrics, available_width: int) -> int:
         """在标点符号处寻找最佳断行点"""
         if max_length <= 0 or max_length >= len(text):
             return max_length
 
+        # 特殊处理：检查下一个字符是否是句子结束符
+        # 如果是，尝试将其包含在当前行（如果宽度允许）
+        if max_length < len(text):
+            next_char = text[max_length]
+            if next_char in '。！？!?；;':
+                # 尝试包含这个标点符号
+                test_text = text[:max_length + 1]
+                test_width = fm.horizontalAdvance(test_text)
+                # 如果宽度在合理范围内（允许超出10%），则包含标点
+                if test_width <= available_width * 1.1:
+                    return max_length + 1
+
         # 特殊处理：检查是否在双引号内（对话内容）
         # 如果断点在双引号内，尝试延伸到右双引号之后
-        quote_result = self._handle_quote_break(text, max_length)
+        quote_result = self._handle_quote_break(text, max_length, fm, available_width)
         if quote_result != max_length:
             return quote_result
 
@@ -160,12 +172,14 @@ class LineTextWidget(QWidget):
         # 如果没有找到合适的断点，返回原始长度
         return max_length
 
-    def _handle_quote_break(self, text: str, max_length: int) -> int:
+    def _handle_quote_break(self, text: str, max_length: int, fm: QFontMetrics, available_width: int) -> int:
         """处理双引号内的断行 - 尽量保持对话完整
 
         Args:
             text: 待处理的文本
             max_length: 最大可显示长度
+            fm: 字体度量对象
+            available_width: 可用宽度
 
         Returns:
             调整后的断点位置，如果不需要调整则返回max_length
@@ -198,9 +212,17 @@ class LineTextWidget(QWidget):
                     if new_length < len(text):
                         next_char = text[new_length]
                         if next_char in '。！？!?，、,；;：:':
-                            new_length += 1
+                            # 检查宽度是否允许
+                            test_text = text[:new_length + 1]
+                            test_width = fm.horizontalAdvance(test_text)
+                            if test_width <= available_width * 1.1:
+                                new_length += 1
 
-                    return new_length
+                    # 检查新长度的宽度是否在合理范围内
+                    test_text = text[:new_length]
+                    test_width = fm.horizontalAdvance(test_text)
+                    if test_width <= available_width * 1.15:  # 允许超出15%
+                        return new_length
 
         # 如果不在引号内，或者找不到合适的右引号，返回原始长度
         return max_length
