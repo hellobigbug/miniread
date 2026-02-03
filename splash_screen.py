@@ -34,7 +34,7 @@ class SplashScreen(QSplashScreen):
         font = QFont("Microsoft YaHei", 12)
         painter.setFont(font)
         painter.setPen(QColor("#AAAAAA"))
-        painter.drawText(0, 120, 400, 30, Qt.AlignCenter, "阅读辅助工具")
+        painter.drawText(0, 120, 400, 30, Qt.AlignCenter, "阅读工具")
 
         # 绘制版本信息
         font = QFont("Microsoft YaHei", 9)

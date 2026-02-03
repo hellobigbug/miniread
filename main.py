@@ -1,5 +1,5 @@
 """
-MiniRead - Windows阅读辅助工具
+MiniRead - Windows阅读工具
 主程序入口
 
 功能特点:

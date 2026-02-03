@@ -15,6 +15,10 @@ class ConfigManager:
 
     # 默认配置
     DEFAULT_CONFIG = {
+        # 应用设置
+        "app": {
+            "first_launch": True  # 是否首次启动
+        },
         # 窗口设置
         "window": {
             "x": 100,

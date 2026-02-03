@@ -167,7 +167,7 @@ class FontSettingsDialog(QDialog):
         preview_group = QGroupBox("预览")
         preview_layout = QVBoxLayout(preview_group)
 
-        self._preview_label = QLabel("MiniRead 阅读辅助工具 - 预览文本")
+        self._preview_label = QLabel("MiniRead 阅读工具 - 预览文本")
         self._preview_label.setAlignment(Qt.AlignCenter)
         self._preview_label.setMinimumHeight(50)
         self._preview_label.setStyleSheet("""

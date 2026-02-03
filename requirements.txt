@@ -1,4 +1,4 @@
-# MiniRead - Windows阅读辅助工具依赖
+# MiniRead - Windows阅读工具依赖
 # Python 3.8+
 
 # GUI框架

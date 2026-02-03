@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-title MiniRead - 阅读辅助工具
+title MiniRead - 阅读工具
 
 echo ========================================
-echo    MiniRead - Windows阅读辅助工具
+echo    MiniRead - Windows阅读工具
 echo ========================================
 echo.
 

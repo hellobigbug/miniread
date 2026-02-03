@@ -28,6 +28,12 @@ from config import get_config
 class MainWindow(QMainWindow):
     """主窗口类"""
 
+    # 常量定义
+    WINDOW_HIDE_TIMEOUT = 120000  # 窗口自动隐藏时间（毫秒）- 2分钟
+    CONFIG_SAVE_DELAY = 2000  # 配置保存延迟（毫秒）- 2秒
+    EDGE_MARGIN = 15  # 边缘检测距离（像素）
+    POSITION_SAVE_INTERVAL = 10  # 每翻页N次保存一次阅读位置
+
     # 信号
     visibility_changed = pyqtSignal(bool)
 
@@ -45,12 +51,11 @@ class MainWindow(QMainWindow):
         self._current_text = ""
 
         # 边缘拖拽调整大小相关
-        self._resize_edge = None  # 当前调整的边缘: 'left', 'right', 'top', 'bottom', 'topleft', 'topright', 'bottomleft', 'bottomright'
+        self._resize_edge = None
         self._resize_start_pos = QPoint()
         self._resize_start_geometry = None
-        self._edge_margin = 15  # 边缘检测距离（像素）- 增大范围方便拖拽
 
-        # 窗口自动隐藏相关（2分钟无操作）
+        # 窗口自动隐藏相关
         self._window_hide_timer = QTimer(self)
         self._window_hide_timer.timeout.connect(self._auto_hide_window)
         self._window_hide_timer.setSingleShot(True)
@@ -61,10 +66,12 @@ class MainWindow(QMainWindow):
         self._config_save_timer.setSingleShot(True)
 
         # 鼠标摇动检测相关
-        self._shake_positions = []  # 记录鼠标位置历史
-        self._shake_threshold = 100  # 摇动幅度阈值（像素）
-        self._shake_time_window = 1000  # 检测时间窗口（毫秒）
+        self._shake_positions = []
         self._last_mouse_time = 0
+
+        # 阅读位置保存优化
+        self._page_turn_count = 0  # 翻页计数器
+        self._last_saved_position = 0  # 上次保存的位置
 
         # 初始化UI（轻量级，不做耗时操作）
         self._init_window()
@@ -72,14 +79,20 @@ class MainWindow(QMainWindow):
         self._init_tray()
         self._load_config()
 
-        # 先显示欢迎文本，确保窗口能立即显示
-        self._show_welcome()
+        # 检查是否首次启动
+        is_first_launch = self.config.get("app.first_launch", True)
 
-        # 延迟加载上次阅读的文件（窗口显示后再执行，避免阻塞）
-        QTimer.singleShot(100, self._deferred_load_last_file)
+        if is_first_launch:
+            # 首次启动，显示欢迎文本
+            self._show_welcome()
+            # 标记为已启动过
+            self.config.set("app.first_launch", False)
+        else:
+            # 非首次启动，延迟加载上次阅读的文件
+            QTimer.singleShot(100, self._deferred_load_last_file)
 
-        # 启动窗口自动隐藏定时器（2分钟后隐藏窗口）
-        self._window_hide_timer.start(120000)  # 120秒 = 2分钟
+        # 启动窗口自动隐藏定时器
+        self._window_hide_timer.start(self.WINDOW_HIDE_TIMEOUT)
 
     def _deferred_load_last_file(self) -> None:
         """延迟加载上次阅读的文件（在窗口显示后调用）"""
@@ -150,7 +163,7 @@ class MainWindow(QMainWindow):
         """初始化系统托盘"""
         # 创建托盘图标
         self._tray_icon = QSystemTrayIcon(self)
-        self._tray_icon.setToolTip("MiniRead - 阅读辅助工具")
+        self._tray_icon.setToolTip("MiniRead - 阅读工具")
 
         # 创建托盘菜单
         tray_menu = QMenu()
@@ -224,29 +237,42 @@ class MainWindow(QMainWindow):
 
     def _show_welcome(self):
         """显示欢迎文本"""
-        welcome_text = """欢迎使用 MiniRead 阅读辅助工具
+        welcome_text = """━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    欢迎使用 MiniRead 阅读工具
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📖 快速开始
-  • 右键打开菜单，选择"打开文件"
-  • 或直接拖拽文件到窗口
+  ▸ 右键打开菜单 → 选择"打开文件"
+  ▸ 或直接拖拽文件到窗口中
 
-⌨️ 快捷操作
-  • 方向键 / 滚轮 - 翻页
-  • 空格 / 回车 - 下一行
-  • Home / End - 首行 / 末行
-  • PageUp / PageDown - 快速翻页
+⌨️ 键盘快捷键
+  ▸ 空格 / 回车 / ↓ / → ────── 下一行
+  ▸ ↑ / ← / Backspace ────── 上一行
+  ▸ Home / End ──────────── 跳转到首行/末行
+  ▸ PageUp / PageDown ───── 快速翻页 (±10%)
 
 🖱️ 鼠标操作
-  • 右键 - 打开功能菜单
-  • 拖拽 - 移动窗口
-  • 摇动3次 - 快速隐藏
+  ▸ 滚轮 ──────────────── 上下翻页
+  ▸ 右键 ──────────────── 打开功能菜单
+  ▸ 左键拖拽 ───────────── 移动窗口位置
+  ▸ 边缘拖拽 ───────────── 调整窗口大小
 
-⚙️ 其他功能
-  • 2分钟无操作自动隐藏
-  • 支持 TXT、PDF、DOCX 等格式
-  • 可自定义字体、颜色、透明度
+⚙️ 智能功能
+  ▸ 自动保存阅读进度
+  ▸ 下次打开自动恢复到上次位置
+  ▸ 2分钟无操作自动隐藏窗口
+  ▸ 双击托盘图标可快速显示/隐藏
 
-右键打开菜单开始使用 →"""
+📄 支持格式
+  ▸ TXT、PDF、DOCX、MD 等多种文本格式
+
+🎨 个性化设置
+  ▸ 右键菜单 → 字体设置 → 自定义字体和颜色
+  ▸ 右键菜单 → 显示设置 → 调整背景色和透明度
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  提示：右键打开菜单开始使用 →
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
         self._text_widget.setText(welcome_text)
 
     def _open_file(self):
@@ -261,7 +287,7 @@ class MainWindow(QMainWindow):
             self._load_file(file_path)
 
     def _load_file(self, file_path: str):
-        """加载文件"""
+        """加载文件 - 增强错误处理"""
         try:
             filename, content = parse_file(file_path)
 
@@ -275,8 +301,14 @@ class MainWindow(QMainWindow):
 
             # 恢复阅读位置
             last_pos = self.config.get_reading_position(file_path)
+            restored = False
             if last_pos > 0:
                 self._text_widget.setPosition(last_pos)
+                self._last_saved_position = last_pos
+                restored = True
+
+            # 重置翻页计数器
+            self._page_turn_count = 0
 
             # 添加到最近文件
             self.config.add_recent_file(file_path)
@@ -290,16 +322,56 @@ class MainWindow(QMainWindow):
             # 更新托盘提示
             self._tray_icon.setToolTip(f"MiniRead - {filename}")
 
+            # 显示恢复提示
+            if restored:
+                progress = self._text_widget.getProgress()
+                self._tray_icon.showMessage(
+                    "已恢复阅读进度",
+                    f"已恢复到上次阅读位置 (进度: {int(progress * 100)}%)",
+                    QSystemTrayIcon.Information,
+                    2000
+                )
+
+        except FileNotFoundError:
+            QMessageBox.critical(self, "错误", f"文件不存在:\n{file_path}")
+        except PermissionError:
+            QMessageBox.critical(self, "错误", f"没有权限读取文件:\n{file_path}")
+        except UnicodeDecodeError:
+            QMessageBox.critical(
+                self, "错误",
+                f"文件编码错误，无法读取:\n{file_path}\n\n建议：请确保文件是UTF-8编码"
+            )
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"无法打开文件:\n{str(e)}")
+            QMessageBox.critical(
+                self, "错误",
+                f"无法打开文件:\n{file_path}\n\n错误详情: {str(e)}"
+            )
 
     def _prev_line(self):
         """上一行"""
         self._text_widget.prevLine()
+        self._on_page_turn()
 
     def _next_line(self):
         """下一行"""
         self._text_widget.nextLine()
+        self._on_page_turn()
+
+    def _on_page_turn(self):
+        """翻页时调用 - 优化阅读位置保存"""
+        if not self._current_file:
+            return
+
+        self._page_turn_count += 1
+
+        # 每翻页N次才保存一次
+        if self._page_turn_count >= self.POSITION_SAVE_INTERVAL:
+            current_pos = self._text_widget.getCurrentCharIndex()
+            # 只有位置真正改变时才保存
+            if current_pos != self._last_saved_position:
+                self.config.save_reading_position(self._current_file, current_pos)
+                self._last_saved_position = current_pos
+                self._page_turn_count = 0
 
     def _toggle_scroll(self):
         """切换下一行（兼容旧快捷键）"""
@@ -363,7 +435,7 @@ class MainWindow(QMainWindow):
             self.show()
             self._is_hidden = False
             # 显示窗口时重启定时器
-            self._window_hide_timer.start(120000)
+            self._window_hide_timer.start(self.WINDOW_HIDE_TIMEOUT)
         else:
             self.hide()
             self._is_hidden = True
@@ -425,7 +497,7 @@ class MainWindow(QMainWindow):
     def _reset_window_hide_timer(self):
         """重置窗口隐藏定时器（任何用户活动时调用）"""
         self._window_hide_timer.stop()
-        self._window_hide_timer.start(120000)  # 重置为2分钟
+        self._window_hide_timer.start(self.WINDOW_HIDE_TIMEOUT)
 
     def _auto_hide_window(self):
         """自动隐藏窗口（2分钟无操作）"""
@@ -435,45 +507,47 @@ class MainWindow(QMainWindow):
             self.visibility_changed.emit(False)
 
     def _detect_shake(self, pos, current_time: int):
-        """检测鼠标摇动
+        """检测鼠标摇动 - 优化算法减少计算量
 
         Args:
             pos: 鼠标位置
             current_time: 当前时间戳（毫秒）
         """
-
         # 添加当前位置和时间
         self._shake_positions.append((pos.x(), pos.y(), current_time))
 
-        # 移除超过时间窗口的旧位置
+        # 移除超过时间窗口的旧位置（优化：只保留必要的数据）
+        cutoff_time = current_time - self.SHAKE_TIME_WINDOW
         self._shake_positions = [
             (x, y, t) for x, y, t in self._shake_positions
-            if current_time - t < self._shake_time_window
+            if t >= cutoff_time
         ]
 
-        # 需要至少6个位置点来检测3次摇动（左右左右左右）
-        if len(self._shake_positions) < 6:
+        # 需要至少指定数量的位置点来检测摇动
+        if len(self._shake_positions) < self.SHAKE_MIN_POINTS:
             return False
 
-        # 检测是否有3次大幅度左右摇动
+        # 优化：只检查最近的位置点，避免处理过多历史数据
+        recent_positions = self._shake_positions[-self.SHAKE_MIN_POINTS * 2:]
+
+        # 检测是否有足够次数的大幅度左右摇动
         shake_count = 0
-        direction = None  # 'left' 或 'right'
+        direction = None
 
-        for i in range(1, len(self._shake_positions)):
-            x_prev, y_prev, _ = self._shake_positions[i-1]
-            x_curr, y_curr, _ = self._shake_positions[i]
-
+        for i in range(1, len(recent_positions)):
+            x_prev, _, _ = recent_positions[i-1]
+            x_curr, _, _ = recent_positions[i]
             x_diff = x_curr - x_prev
 
             # 检测大幅度移动
-            if abs(x_diff) > self._shake_threshold:
+            if abs(x_diff) > self.SHAKE_THRESHOLD:
                 current_direction = 'right' if x_diff > 0 else 'left'
 
                 # 如果方向改变，计数增加
                 if direction is not None and direction != current_direction:
                     shake_count += 1
-                    if shake_count >= 3:
-                        # 检测到3次摇动，清空历史并隐藏窗口
+                    if shake_count >= self.SHAKE_COUNT_THRESHOLD:
+                        # 检测到足够次数的摇动，清空历史并隐藏窗口
                         self._shake_positions.clear()
                         return True
 
@@ -507,7 +581,7 @@ class MainWindow(QMainWindow):
         """检测鼠标是否在窗口边缘，返回边缘类型"""
         x, y = pos.x(), pos.y()
         w, h = self.width(), self.height()
-        margin = self._edge_margin
+        margin = self.EDGE_MARGIN
 
         # 检测角落（优先级更高）
         if x <= margin and y <= margin:
@@ -595,9 +669,9 @@ class MainWindow(QMainWindow):
             edge = self._get_resize_edge(event.pos())
             self._update_cursor(edge)
 
-            # 只在没有按下鼠标时检测摇动（频率限制：每50ms检测一次）
+            # 只在没有按下鼠标时检测摇动（频率限制优化）
             current_time = int(time.time() * 1000)
-            if current_time - self._last_mouse_time >= 50:
+            if current_time - self._last_mouse_time >= self.SHAKE_DETECT_INTERVAL:
                 self._last_mouse_time = current_time
                 if self._detect_shake(event.globalPos(), current_time):
                     # 检测到摇动，隐藏窗口
@@ -654,7 +728,7 @@ class MainWindow(QMainWindow):
             self._resize_edge = None
             # 延迟保存配置，避免频繁IO导致卡顿
             self._config_save_timer.stop()
-            self._config_save_timer.start(500)  # 500ms后保存
+            self._config_save_timer.start(self.CONFIG_SAVE_DELAY)
             event.accept()
 
     def _create_menu_stylesheet(self) -> str:
