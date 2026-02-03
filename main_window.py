@@ -55,6 +55,11 @@ class MainWindow(QMainWindow):
         self._window_hide_timer.timeout.connect(self._auto_hide_window)
         self._window_hide_timer.setSingleShot(True)
 
+        # 配置保存定时器（延迟保存，避免频繁IO）
+        self._config_save_timer = QTimer(self)
+        self._config_save_timer.timeout.connect(self._save_config)
+        self._config_save_timer.setSingleShot(True)
+
         # 鼠标摇动检测相关
         self._shake_positions = []  # 记录鼠标位置历史
         self._shake_threshold = 100  # 摇动幅度阈值（像素）
@@ -276,6 +281,12 @@ class MainWindow(QMainWindow):
             # 添加到最近文件
             self.config.add_recent_file(file_path)
 
+            # 立即保存阅读历史（确保文件出现在阅读目录中）
+            self.config.save_reading_position(
+                file_path,
+                self._text_widget.getCurrentCharIndex()
+            )
+
             # 更新托盘提示
             self._tray_icon.setToolTip(f"MiniRead - {filename}")
 
@@ -379,7 +390,7 @@ class MainWindow(QMainWindow):
     def increase_font_size(self):
         """增大字号"""
         font = self._text_widget.font()
-        new_size = min(72, font.pointSize() + 2)
+        new_size = min(20, font.pointSize() + 2)
         font.setPointSize(new_size)
         self._text_widget.setFont(font)
         self._save_config()
@@ -389,6 +400,13 @@ class MainWindow(QMainWindow):
         font = self._text_widget.font()
         new_size = max(8, font.pointSize() - 2)
         font.setPointSize(new_size)
+        self._text_widget.setFont(font)
+        self._save_config()
+
+    def _set_font_size_preset(self, size: int):
+        """设置字体大小预设"""
+        font = self._text_widget.font()
+        font.setPointSize(size)
         self._text_widget.setFont(font)
         self._save_config()
 
@@ -577,20 +595,20 @@ class MainWindow(QMainWindow):
             edge = self._get_resize_edge(event.pos())
             self._update_cursor(edge)
 
-        # 非拖拽时检测鼠标摇动（频率限制：每50ms检测一次）
-        current_time = int(time.time() * 1000)
-        if current_time - self._last_mouse_time >= 50:
-            self._last_mouse_time = current_time
-            if self._detect_shake(event.globalPos(), current_time):
-                # 检测到摇动，隐藏窗口
-                if not self._is_hidden:
-                    self.hide()
-                    self._is_hidden = True
-                    self.visibility_changed.emit(False)
-                return
+            # 只在没有按下鼠标时检测摇动（频率限制：每50ms检测一次）
+            current_time = int(time.time() * 1000)
+            if current_time - self._last_mouse_time >= 50:
+                self._last_mouse_time = current_time
+                if self._detect_shake(event.globalPos(), current_time):
+                    # 检测到摇动，隐藏窗口
+                    if not self._is_hidden:
+                        self.hide()
+                        self._is_hidden = True
+                        self.visibility_changed.emit(False)
+                    return
 
-            # 重置窗口隐藏定时器（限频后调用）
-            self._reset_window_hide_timer()
+                # 重置窗口隐藏定时器（限频后调用）
+                self._reset_window_hide_timer()
 
     def _do_resize(self, global_pos):
         """执行窗口大小调整"""
@@ -634,8 +652,172 @@ class MainWindow(QMainWindow):
         if event.button() == Qt.LeftButton:
             self._is_dragging = False
             self._resize_edge = None
-            self._save_config()
+            # 延迟保存配置，避免频繁IO导致卡顿
+            self._config_save_timer.stop()
+            self._config_save_timer.start(500)  # 500ms后保存
             event.accept()
+
+    def _create_menu_stylesheet(self) -> str:
+        """创建菜单样式表"""
+        return """
+            QMenu {
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3A3A3A, stop:1 #2A2A2A);
+                color: #FFFFFF;
+                border: 1px solid #555555;
+                border-radius: 6px;
+                padding: 5px 3px;
+                font-size: 13px;
+            }
+            QMenu::item {
+                padding: 8px 35px 8px 20px;
+                border-radius: 4px;
+                margin: 1px 4px;
+                background-color: transparent;
+            }
+            QMenu::item:selected {
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #0078D4, stop:1 #005A9E);
+                color: #FFFFFF;
+            }
+            QMenu::item:pressed {
+                background-color: #004578;
+            }
+            QMenu::item:disabled {
+                color: #888888;
+                background-color: transparent;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 transparent, stop:0.5 #555555, stop:1 transparent);
+                margin: 4px 12px;
+            }
+        """
+
+    def _create_file_menu_section(self, menu: QMenu) -> None:
+        """创建文件菜单部分"""
+        # 打开文件
+        open_action = QAction("打开文件...", self)
+        open_action.setShortcut("Ctrl+O")
+        open_action.triggered.connect(self._open_file)
+        menu.addAction(open_action)
+
+        # 最近文件子菜单
+        recent_history = self.config.get_reading_history()
+        if recent_history:
+            recent_files = sorted(
+                recent_history.items(),
+                key=lambda x: x[1].get('last_read', 0),
+                reverse=True
+            )[:5]  # 最近5个文件
+
+            if recent_files:
+                recent_menu = menu.addMenu("最近文件")
+                recent_menu.setStyleSheet(self._create_menu_stylesheet())
+                for file_path, _ in recent_files:
+                    if os.path.exists(file_path):
+                        filename = os.path.basename(file_path)
+                        # 截断过长的文件名
+                        if len(filename) > 30:
+                            filename = filename[:27] + "..."
+                        action = QAction(filename, self)
+                        action.setToolTip(file_path)  # 完整路径作为提示
+                        action.triggered.connect(lambda checked, p=file_path: self._load_file(p))
+                        recent_menu.addAction(action)
+
+        # 阅读目录
+        library_action = QAction("阅读目录", self)
+        library_action.setShortcut("Ctrl+L")
+        library_action.triggered.connect(self._show_library)
+        menu.addAction(library_action)
+
+    def _create_settings_menu_section(self, menu: QMenu) -> None:
+        """创建设置菜单部分"""
+        # 字体设置
+        font_action = QAction("字体设置...", self)
+        font_action.setShortcut("Ctrl+F")
+        font_action.triggered.connect(self._show_font_settings)
+        menu.addAction(font_action)
+
+        # 字体大小快速选择
+        font_size_menu = menu.addMenu("字体大小")
+        font_size_menu.setStyleSheet(self._create_menu_stylesheet())
+        current_size = self._text_widget.font().pointSize()
+        sizes = [
+            ("极小", 9),
+            ("小", 12),
+            ("中等", 16),
+            ("大", 24),
+            ("特大", 32)
+        ]
+        for name, size in sizes:
+            if size == current_size:
+                action = QAction(f"✓ {name} ({size}px)", self)
+            else:
+                action = QAction(f"   {name} ({size}px)", self)
+            action.triggered.connect(lambda checked, s=size: self._set_font_size_preset(s))
+            font_size_menu.addAction(action)
+
+        # 显示设置
+        display_action = QAction("显示设置...", self)
+        display_action.setShortcut("Ctrl+D")
+        display_action.triggered.connect(self._show_display_settings)
+        menu.addAction(display_action)
+
+    def _create_help_menu_section(self, menu: QMenu) -> None:
+        """创建帮助菜单部分"""
+        help_menu = menu.addMenu("操作说明")
+        help_menu.setStyleSheet(self._create_menu_stylesheet())
+
+        # 键盘操作说明
+        keyboard_section = QAction("键盘操作", self)
+        keyboard_section.setEnabled(False)
+        help_menu.addAction(keyboard_section)
+
+        keyboard_shortcuts = [
+            ("空格 / 回车", "下一行"),
+            ("方向键 ↑↓", "上/下一行"),
+            ("方向键 ←→", "上/下一行"),
+            ("Home / End", "首行/末行"),
+            ("PageUp / PageDown", "快速翻页 (±10%)")
+        ]
+        for key, desc in keyboard_shortcuts:
+            action = QAction(f"  {key} → {desc}", self)
+            action.setEnabled(False)
+            help_menu.addAction(action)
+
+        help_menu.addSeparator()
+
+        # 鼠标操作说明
+        mouse_section = QAction("鼠标操作", self)
+        mouse_section.setEnabled(False)
+        help_menu.addAction(mouse_section)
+
+        mouse_operations = [
+            ("滚轮", "上/下翻页"),
+            ("左键拖拽", "移动窗口"),
+            ("边缘拖拽", "调整窗口大小"),
+            ("快速摇动3次", "隐藏窗口")
+        ]
+        for operation, desc in mouse_operations:
+            action = QAction(f"  {operation} → {desc}", self)
+            action.setEnabled(False)
+            help_menu.addAction(action)
+
+    def _create_window_menu_section(self, menu: QMenu) -> None:
+        """创建窗口操作菜单部分"""
+        # 隐藏窗口
+        hide_action = QAction("隐藏窗口", self)
+        hide_action.setShortcut("Ctrl+H")
+        hide_action.triggered.connect(self._toggle_visibility)
+        menu.addAction(hide_action)
+
+        # 退出程序
+        quit_action = QAction("退出程序", self)
+        quit_action.setShortcut("Ctrl+Q")
+        quit_action.triggered.connect(self._confirm_close)
+        menu.addAction(quit_action)
 
     def contextMenuEvent(self, event):
         """右键菜单"""
@@ -644,72 +826,19 @@ class MainWindow(QMainWindow):
 
         # 创建右键菜单
         context_menu = QMenu(self)
-        context_menu.setStyleSheet("""
-            QMenu {
-                background-color: #2D2D2D;
-                color: white;
-                border: 1px solid #3D3D3D;
-                border-radius: 4px;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 8px 30px 8px 20px;
-                border-radius: 3px;
-            }
-            QMenu::item:selected {
-                background-color: #007ACC;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #3D3D3D;
-                margin: 5px 10px;
-            }
-        """)
+        context_menu.setStyleSheet(self._create_menu_stylesheet())
 
-        # 文件操作
-        open_action = QAction("📂 打开文件", self)
-        open_action.triggered.connect(self._open_file)
-        context_menu.addAction(open_action)
-
-        library_action = QAction("📚 阅读目录", self)
-        library_action.triggered.connect(self._show_library)
-        context_menu.addAction(library_action)
-
+        # 构建菜单结构
+        self._create_file_menu_section(context_menu)
         context_menu.addSeparator()
 
-        # 翻页操作
-        prev_action = QAction("⬆️ 上一行", self)
-        prev_action.triggered.connect(self._prev_line)
-        context_menu.addAction(prev_action)
-
-        next_action = QAction("⬇️ 下一行", self)
-        next_action.triggered.connect(self._next_line)
-        context_menu.addAction(next_action)
-
+        self._create_settings_menu_section(context_menu)
         context_menu.addSeparator()
 
-        # 设置
-        font_action = QAction("🔤 字体设置", self)
-        font_action.triggered.connect(self._show_font_settings)
-        context_menu.addAction(font_action)
-
-        display_action = QAction("🎨 显示设置", self)
-        display_action.triggered.connect(self._show_display_settings)
-        context_menu.addAction(display_action)
-
+        self._create_help_menu_section(context_menu)
         context_menu.addSeparator()
 
-        # 窗口操作
-        hide_action = QAction("👁️ 隐藏窗口", self)
-        hide_action.triggered.connect(self._toggle_visibility)
-        context_menu.addAction(hide_action)
-
-        context_menu.addSeparator()
-
-        # 退出
-        quit_action = QAction("❌ 退出程序", self)
-        quit_action.triggered.connect(self._confirm_close)
-        context_menu.addAction(quit_action)
+        self._create_window_menu_section(context_menu)
 
         # 显示菜单
         context_menu.exec_(event.globalPos())

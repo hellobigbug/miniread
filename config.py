@@ -21,7 +21,7 @@ class ConfigManager:
             "y": 100,
             "width": 800,
             "height": 60,
-            "opacity": 0.95,
+            "opacity": 0.01,
             "always_on_top": True
         },
         # 字体设置

@@ -186,30 +186,72 @@ class FontSettingsDialog(QDialog):
         button_layout.addStretch()
 
         self._reset_btn = QPushButton("重置默认")
+        self._reset_btn.setCursor(Qt.PointingHandCursor)
         self._reset_btn.setStyleSheet("""
             QPushButton {
-                min-height: 30px;
-                padding: 8px 16px;
+                min-height: 36px;
+                padding: 8px 20px;
+                background-color: transparent;
+                border: 1px solid #555555;
+                border-radius: 6px;
+                color: #CCCCCC;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #3D3D3D;
+                border-color: #666666;
+                color: #FFFFFF;
+            }
+            QPushButton:pressed {
+                background-color: #2D2D2D;
             }
         """)
         self._reset_btn.clicked.connect(self._reset_to_default)
         button_layout.addWidget(self._reset_btn)
 
         self._cancel_btn = QPushButton("取消")
+        self._cancel_btn.setCursor(Qt.PointingHandCursor)
         self._cancel_btn.setStyleSheet("""
             QPushButton {
-                min-height: 30px;
-                padding: 8px 16px;
+                min-height: 36px;
+                padding: 8px 20px;
+                background-color: #3D3D3D;
+                border: 1px solid #555555;
+                border-radius: 6px;
+                color: #FFFFFF;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #4D4D4D;
+                border-color: #666666;
+            }
+            QPushButton:pressed {
+                background-color: #2D2D2D;
             }
         """)
         self._cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(self._cancel_btn)
 
         self._apply_btn = QPushButton("应用")
+        self._apply_btn.setCursor(Qt.PointingHandCursor)
         self._apply_btn.setStyleSheet("""
             QPushButton {
-                min-height: 30px;
-                padding: 8px 16px;
+                min-height: 36px;
+                padding: 8px 24px;
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #0078D4, stop:1 #005A9E);
+                border: none;
+                border-radius: 6px;
+                color: #FFFFFF;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1084E0, stop:1 #0066AA);
+            }
+            QPushButton:pressed {
+                background-color: #004578;
             }
         """)
         self._apply_btn.clicked.connect(self._apply_settings)
@@ -839,17 +881,18 @@ class LibraryDialog(QDialog):
 
 
 class ConfirmationDialog(QDialog):
-    """自定义确认对话框"""
+    """优化的确认对话框 - 简洁美观"""
 
     def __init__(self, parent=None, title="确认", content="确定要执行此操作吗？"):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setFixedSize(300, 150)
+        self.setFixedSize(340, 160)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
         self._title = title
         self._content = content
+        self._drag_pos = QPoint()
 
         self._init_ui()
 
@@ -861,24 +904,24 @@ class ConfirmationDialog(QDialog):
         container = QFrame()
         container.setStyleSheet("""
             QFrame {
-                background-color: #2D2D2D;
-                border: 1px solid #3D3D3D;
-                border-radius: 8px;
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #3A3A3A, stop:1 #2A2A2A);
+                border: 1px solid #555555;
+                border-radius: 10px;
             }
         """)
         layout.addWidget(container)
 
         inner_layout = QVBoxLayout(container)
-        inner_layout.setContentsMargins(20, 20, 20, 20)
-        inner_layout.setSpacing(15)
+        inner_layout.setContentsMargins(25, 20, 25, 20)
+        inner_layout.setSpacing(18)
 
         # 标题
         title_label = QLabel(self._title)
         title_label.setStyleSheet("""
             color: #FFFFFF;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
-            font-family: "Microsoft YaHei";
             border: none;
         """)
         inner_layout.addWidget(title_label)
@@ -887,10 +930,10 @@ class ConfirmationDialog(QDialog):
         content_label = QLabel(self._content)
         content_label.setWordWrap(True)
         content_label.setStyleSheet("""
-            color: #CCCCCC;
-            font-size: 14px;
-            font-family: "Microsoft YaHei";
+            color: #BBBBBB;
+            font-size: 13px;
             border: none;
+            padding: 5px 0;
         """)
         inner_layout.addWidget(content_label)
 
@@ -898,18 +941,20 @@ class ConfirmationDialog(QDialog):
 
         # 按钮
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
         btn_layout.addStretch()
 
         cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedHeight(32)
         cancel_btn.setCursor(Qt.PointingHandCursor)
         cancel_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
                 border: 1px solid #555555;
-                border-radius: 4px;
+                border-radius: 5px;
                 color: #CCCCCC;
-                padding: 6px 12px;
-                font-family: "Microsoft YaHei";
+                padding: 0 20px;
+                font-size: 13px;
             }
             QPushButton:hover {
                 background-color: #3D3D3D;
@@ -917,32 +962,36 @@ class ConfirmationDialog(QDialog):
                 color: #FFFFFF;
             }
             QPushButton:pressed {
-                background-color: #444444;
+                background-color: #2D2D2D;
             }
         """)
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
 
-        confirm_btn = QPushButton("确定")
+        confirm_btn = QPushButton("退出")
+        confirm_btn.setFixedHeight(32)
         confirm_btn.setCursor(Qt.PointingHandCursor)
         confirm_btn.setStyleSheet("""
             QPushButton {
-                background-color: #D32F2F;
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #E53935, stop:1 #C62828);
                 border: none;
-                border-radius: 4px;
+                border-radius: 5px;
                 color: #FFFFFF;
-                padding: 6px 16px;
-                font-family: "Microsoft YaHei";
+                padding: 0 24px;
+                font-size: 13px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #E53935;
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #EF5350, stop:1 #D32F2F);
             }
             QPushButton:pressed {
-                background-color: #C62828;
+                background-color: #B71C1C;
             }
         """)
         confirm_btn.clicked.connect(self.accept)
+        confirm_btn.setDefault(True)
         btn_layout.addWidget(confirm_btn)
 
         inner_layout.addLayout(btn_layout)

@@ -5,19 +5,21 @@ MiniRead - 按行显示文本组件
 - 不预先构建行列表，setText 时 O(1)
 - 只记录当前字符位置，按需查找当前行
 - 进度保存为百分比，避免行号计算
+- 添加位置历史缓存，优化大文件性能
 
 这种设计使大文件加载几乎无延迟。
 """
 
 from __future__ import annotations
 
+import re
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QFontMetrics, QPainter, QColor
 
 
 class LineTextWidget(QWidget):
-    """按行显示文本组件（懒加载模式）"""
+    """按行显示文本组件（懒加载模式 + 性能优化）"""
 
     # 信号：当前行变化时发出 (当前行号仅用于显示，-1表示未知)
     line_changed = pyqtSignal(int, int)  # 当前行, 总行数（-1表示未统计）
@@ -37,16 +39,30 @@ class LineTextWidget(QWidget):
         self._font = QFont("Microsoft YaHei", 16)
         self._text_color = QColor("#FFFFFF")
 
+        # 性能优化：位置历史缓存（用于快速回退）
+        self._position_history = []  # 最近访问的位置列表
+        self._max_history = 100  # 最多缓存100个位置
+        self._last_width = 0  # 上次计算时的窗口宽度
+
         # 设置属性
         self.setFocusPolicy(Qt.NoFocus)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
     def setText(self, text: str) -> None:
-        """设置文本内容 - O(1) 操作，不做任何预处理"""
-        self._full_text = text or ""
+        """设置文本内容 - 将所有文本连接成一行"""
+        if text:
+            # 将所有换行符替换为空格，形成连续文本
+            self._full_text = text.replace('\n', ' ').replace('\r', ' ')
+            # 合并多个连续空格为一个
+            self._full_text = re.sub(r'\s+', ' ', self._full_text).strip()
+        else:
+            self._full_text = ""
+
         self._text_length = len(self._full_text)
         self._current_pos = 0
+        self._position_history = []  # 清空历史
+        self._last_width = 0
         self._emit_progress()
         self.update()
 
@@ -61,33 +77,18 @@ class LineTextWidget(QWidget):
         self.line_changed.emit(-1, -1)
 
     def _get_current_line_text(self) -> str:
-        """获取当前位置所在的显示行文本（根据窗口宽度自动分割）"""
+        """获取当前位置的剩余文本"""
         if not self._full_text:
             return ""
 
         # 确保位置有效
         pos = max(0, min(self._current_pos, self._text_length - 1)) if self._text_length > 0 else 0
 
-        # 找原始行首（向前找换行符）
-        line_start = self._full_text.rfind('\n', 0, pos + 1)
-        line_start = line_start + 1 if line_start != -1 else 0
-
-        # 找原始行尾（向后找换行符）
-        line_end = self._full_text.find('\n', pos)
-        if line_end == -1:
-            line_end = self._text_length
-
-        # 获取原始行文本
-        full_line = self._full_text[line_start:line_end]
-
-        # 计算从当前位置到行尾的文本
-        offset_in_line = pos - line_start
-        remaining_text = full_line[offset_in_line:]
-
-        return remaining_text
+        # 返回从当前位置到文本末尾的所有内容
+        return self._full_text[pos:]
 
     def _get_display_line_length(self, text: str, available_width: int) -> int:
-        """计算在给定宽度下能显示多少个字符"""
+        """计算在给定宽度下能显示多少个字符（智能断行）"""
         if not text:
             return 0
 
@@ -107,7 +108,51 @@ class LineTextWidget(QWidget):
             else:
                 right = mid - 1
 
+        # 如果找到了可显示的字符数，尝试在标点符号处断行
+        if result > 0:
+            result = self._find_best_break_point(text, result)
+
         return result
+
+    def _find_best_break_point(self, text: str, max_length: int) -> int:
+        """在标点符号处寻找最佳断行点"""
+        if max_length <= 0 or max_length >= len(text):
+            return max_length
+
+        # 定义断行优先级（从高到低）
+        # 优先级1: 句号、问号、感叹号等句子结束符
+        sentence_end_marks = '。！？!?；;'
+        # 优先级2: 逗号、顿号等句内停顿符
+        pause_marks = '，、,、'
+        # 优先级3: 其他标点符号
+        other_marks = '：:）)】}」』"\'》>'
+
+        # 在max_length范围内向前搜索最佳断点（最多回退30%）
+        search_start = max(0, int(max_length * 0.7))
+        search_text = text[search_start:max_length + 1]
+
+        # 优先级1: 查找句子结束符
+        for i in range(len(search_text) - 1, -1, -1):
+            if search_text[i] in sentence_end_marks:
+                return search_start + i + 1
+
+        # 优先级2: 查找逗号等停顿符
+        for i in range(len(search_text) - 1, -1, -1):
+            if search_text[i] in pause_marks:
+                return search_start + i + 1
+
+        # 优先级3: 查找其他标点符号
+        for i in range(len(search_text) - 1, -1, -1):
+            if search_text[i] in other_marks:
+                return search_start + i + 1
+
+        # 优先级4: 查找空格
+        for i in range(len(search_text) - 1, -1, -1):
+            if search_text[i] == ' ':
+                return search_start + i + 1
+
+        # 如果没有找到合适的断点，返回原始长度
+        return max_length
 
     def text(self) -> str:
         """获取当前显示的行文本"""
@@ -135,6 +180,13 @@ class LineTextWidget(QWidget):
         """获取文本颜色"""
         return self._text_color
 
+    def _add_to_history(self, pos: int) -> None:
+        """添加位置到历史记录"""
+        if not self._position_history or self._position_history[-1] != pos:
+            self._position_history.append(pos)
+            if len(self._position_history) > self._max_history:
+                self._position_history.pop(0)
+
     def nextLine(self) -> None:
         """切换到下一行（根据窗口宽度智能分行）"""
         if not self._full_text:
@@ -148,26 +200,23 @@ class LineTextWidget(QWidget):
 
         # 计算可显示的字符数
         available_width = max(10, self.width() - 20)
+        current_width = self.width()
+
+        # 如果窗口宽度改变，清空历史
+        if current_width != self._last_width:
+            self._position_history = []
+            self._last_width = current_width
+
         display_length = self._get_display_line_length(current_text, available_width)
 
         if display_length == 0:
-            # 窗口太窄，至少移动一个字符
             display_length = 1
 
-        # 如果显示长度等于当前文本长度，说明当前行已经全部显示
-        if display_length >= len(current_text):
-            # 查找下一个换行符
-            next_newline = self._full_text.find('\n', self._current_pos)
-            if next_newline != -1:
-                # 跳到换行符后面
-                new_pos = next_newline + 1
-            else:
-                # 没有换行符，到达末尾
-                self.reached_end.emit()
-                return
-        else:
-            # 移动到下一个显示行（当前位置 + 显示长度）
-            new_pos = self._current_pos + display_length
+        # 保存当前位置到历史
+        self._add_to_history(self._current_pos)
+
+        # 移动到下一个显示行
+        new_pos = self._current_pos + display_length
 
         # 检查是否到达末尾
         if new_pos >= self._text_length:
@@ -179,7 +228,7 @@ class LineTextWidget(QWidget):
         self.update()
 
     def prevLine(self) -> None:
-        """切换到上一行（根据窗口宽度智能分行）"""
+        """切换到上一行（根据窗口宽度智能分行）- 优化版"""
         if not self._full_text:
             return
 
@@ -187,66 +236,50 @@ class LineTextWidget(QWidget):
             self.reached_start.emit()
             return
 
-        # 获取可显示宽度
+        # 尝试从历史记录中获取上一个位置（O(1)操作）
+        if len(self._position_history) >= 2:
+            # 移除当前位置
+            self._position_history.pop()
+            # 获取上一个位置
+            prev_pos = self._position_history[-1]
+            self._current_pos = prev_pos
+            self._emit_progress()
+            self.update()
+            return
+
+        # 如果历史记录不足，使用估算方法（避免从头遍历）
         available_width = max(10, self.width() - 20)
 
-        # 找当前位置所在的原始行首
-        current_line_start = self._full_text.rfind('\n', 0, self._current_pos)
-        current_line_start = current_line_start + 1 if current_line_start != -1 else 0
-
-        # 如果当前位置就是行首，需要回到上一个原始行
-        if self._current_pos == current_line_start:
-            if current_line_start == 0:
-                self.reached_start.emit()
-                return
-
-            # 找上一个原始行首
-            prev_line_start = self._full_text.rfind('\n', 0, current_line_start - 1)
-            prev_line_start = prev_line_start + 1 if prev_line_start != -1 else 0
-
-            # 找上一个原始行尾
-            prev_line_end = current_line_start - 1
-            prev_line_text = self._full_text[prev_line_start:prev_line_end]
-
-            # 计算上一行的最后一个显示行的起始位置
-            pos = prev_line_start
-            last_display_start = pos
-
-            while pos < prev_line_end:
-                remaining = self._full_text[pos:prev_line_end]
-                display_len = self._get_display_line_length(remaining, available_width)
-                if display_len == 0:
-                    display_len = 1
-
-                next_pos = pos + display_len
-                if next_pos < prev_line_end:
-                    last_display_start = next_pos
-                    pos = next_pos
-                else:
-                    break
-
-            self._current_pos = last_display_start
+        # 估算一行的平均字符数
+        sample_text = self._full_text[max(0, self._current_pos - 200):self._current_pos]
+        if sample_text:
+            avg_display_len = self._get_display_line_length(sample_text, available_width)
+            if avg_display_len == 0:
+                avg_display_len = 1
         else:
-            # 在当前原始行内回退一个显示行
-            # 需要从行首开始计算所有显示行，找到当前位置的上一个显示行
-            pos = current_line_start
-            prev_display_start = current_line_start
+            avg_display_len = 50
 
-            while pos < self._current_pos:
-                remaining = self._full_text[pos:self._current_pos]
-                display_len = self._get_display_line_length(remaining, available_width)
-                if display_len == 0:
-                    display_len = 1
+        # 从估算位置开始向前搜索
+        search_start = max(0, self._current_pos - avg_display_len * 3)
 
-                next_pos = pos + display_len
-                if next_pos >= self._current_pos:
-                    break
+        pos = search_start
+        prev_display_start = search_start
 
-                prev_display_start = pos
-                pos = next_pos
+        while pos < self._current_pos:
+            remaining = self._full_text[pos:]
+            display_len = self._get_display_line_length(remaining, available_width)
+            if display_len == 0:
+                display_len = 1
 
-            self._current_pos = prev_display_start
+            next_pos = pos + display_len
+            if next_pos >= self._current_pos:
+                break
 
+            prev_display_start = pos
+            pos = next_pos
+
+        self._current_pos = prev_display_start
+        self._position_history = []  # 清空历史，因为使用了估算
         self._emit_progress()
         self.update()
 
@@ -254,21 +287,47 @@ class LineTextWidget(QWidget):
         """跳转到第一行"""
         if self._current_pos != 0:
             self._current_pos = 0
+            self._position_history = []
             self._emit_progress()
             self.update()
 
     def lastLine(self) -> None:
-        """跳转到最后一行"""
+        """跳转到最后一行 - 优化版（使用反向估算）"""
         if not self._full_text:
             return
 
-        # 找最后一个换行符
-        last_newline = self._full_text.rfind('\n')
-        if last_newline == -1:
-            self._current_pos = 0
-        else:
-            self._current_pos = last_newline + 1
+        # 获取可显示宽度
+        available_width = max(10, self.width() - 20)
 
+        # 从末尾取样本估算一行字符数
+        sample_size = min(500, self._text_length)
+        sample_text = self._full_text[-sample_size:]
+        avg_display_len = self._get_display_line_length(sample_text, available_width)
+        if avg_display_len == 0:
+            avg_display_len = 1
+
+        # 从估算的最后一行位置开始搜索
+        estimated_last_pos = max(0, self._text_length - avg_display_len * 2)
+
+        pos = estimated_last_pos
+        last_display_start = estimated_last_pos
+
+        while pos < self._text_length:
+            remaining = self._full_text[pos:]
+            display_len = self._get_display_line_length(remaining, available_width)
+            if display_len == 0:
+                display_len = 1
+
+            next_pos = pos + display_len
+            if next_pos >= self._text_length:
+                last_display_start = pos
+                break
+
+            last_display_start = pos
+            pos = next_pos
+
+        self._current_pos = last_display_start
+        self._position_history = []
         self._emit_progress()
         self.update()
 
@@ -285,6 +344,7 @@ class LineTextWidget(QWidget):
             pos = next_newline + 1
 
         self._current_pos = pos
+        self._position_history = []
         self._emit_progress()
         self.update()
 
@@ -307,12 +367,8 @@ class LineTextWidget(QWidget):
             return
 
         # 确保位置有效
-        index = max(0, min(index, self._text_length - 1)) if self._text_length > 0 else 0
-
-        # 对齐到行首
-        line_start = self._full_text.rfind('\n', 0, index + 1)
-        self._current_pos = line_start + 1 if line_start != -1 else 0
-
+        self._current_pos = max(0, min(index, self._text_length - 1)) if self._text_length > 0 else 0
+        self._position_history = []  # 清空历史，因为是跳转
         self._emit_progress()
         self.update()
 
@@ -368,7 +424,9 @@ class LineTextWidget(QWidget):
         self.firstLine()
 
     def resizeEvent(self, event) -> None:
-        """窗口大小改变：只需重绘"""
+        """窗口大小改变：清空历史缓存"""
+        self._position_history = []
+        self._last_width = 0
         self.update()
         super().resizeEvent(event)
 
@@ -382,7 +440,7 @@ class LineTextWidget(QWidget):
         painter.setPen(self._text_color)
 
         if not self._full_text:
-            text = "无内容 - 右键打开菜单或点击📂打开文件"
+            text = "无内容 - 右键打开菜单加载文件"
         else:
             text = self._get_current_line_text()
 
