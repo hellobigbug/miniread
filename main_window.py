@@ -10,7 +10,7 @@ from typing import Optional
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton,
     QLabel, QFileDialog, QMenu, QAction, QSystemTrayIcon,
-    QApplication, QMessageBox, QToolTip
+    QApplication, QMessageBox, QToolTip, QDialog
 )
 from PyQt5.QtCore import Qt, QPoint, QTimer, pyqtSignal, QSize
 from PyQt5.QtGui import (
@@ -70,6 +70,23 @@ class MainWindow(QMainWindow):
         self._current_file = ""
         self._current_text = ""
 
+        # 按钮自动隐藏相关
+        self._buttons_visible = True
+        self._hide_timer = QTimer(self)
+        self._hide_timer.timeout.connect(self._hide_buttons)
+        self._hide_timer.setSingleShot(True)
+
+        # 窗口自动隐藏相关（2分钟无操作）
+        self._window_hide_timer = QTimer(self)
+        self._window_hide_timer.timeout.connect(self._auto_hide_window)
+        self._window_hide_timer.setSingleShot(True)
+
+        # 鼠标摇动检测相关
+        self._shake_positions = []  # 记录鼠标位置历史
+        self._shake_threshold = 100  # 摇动幅度阈值（像素）
+        self._shake_time_window = 1000  # 检测时间窗口（毫秒）
+        self._last_mouse_time = 0
+
         # 初始化UI
         self._init_window()
         self._init_ui()
@@ -80,6 +97,11 @@ class MainWindow(QMainWindow):
         if not self._load_last_file():
             # 如果没有上次文件，显示欢迎文本
             self._show_welcome()
+
+        # 启动自动隐藏定时器（3秒后隐藏按钮）
+        self._hide_timer.start(3000)
+        # 启动窗口自动隐藏定时器（2分钟后隐藏窗口）
+        self._window_hide_timer.start(120000)  # 120秒 = 2分钟
 
     def _load_last_file(self) -> bool:
         """加载上次阅读的文件"""
@@ -214,6 +236,14 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(right_controls)
 
+        # 保存控制按钮的引用以便隐藏/显示
+        self._left_controls = left_controls
+        self._right_controls = right_controls
+        self._control_buttons = [
+            self._file_btn, self._lib_btn, self._prev_btn, self._next_btn,
+            self._font_btn, self._display_btn, self._hide_btn, self._close_btn
+        ]
+
     def _init_tray(self):
         """初始化系统托盘"""
         # 创建托盘图标
@@ -297,6 +327,7 @@ class MainWindow(QMainWindow):
 
     def _open_file(self):
         """打开文件"""
+        self._reset_hide_timer()
         file_filter = FileParser.get_file_filter()
         file_path, _ = QFileDialog.getOpenFileName(
             self, "打开文件", "", file_filter
@@ -353,6 +384,7 @@ class MainWindow(QMainWindow):
 
     def _show_font_settings(self):
         """显示字体设置对话框"""
+        self._reset_hide_timer()
         dialog = FontSettingsDialog(
             self,
             self._text_widget.font(),
@@ -369,6 +401,7 @@ class MainWindow(QMainWindow):
 
     def _show_display_settings(self):
         """显示显示设置对话框（背景色等）"""
+        self._reset_hide_timer()
         dialog = DisplaySettingsDialog(
             self,
             QColor(self.config.get("display.background_color", "#2D2D2D")),
@@ -386,6 +419,7 @@ class MainWindow(QMainWindow):
 
     def _show_library(self):
         """显示阅读目录"""
+        self._reset_hide_timer()
         dialog = LibraryDialog(self, self.config.get_reading_history())
         dialog.file_selected.connect(self._load_file)
         dialog.file_removed.connect(self._on_file_removed)
@@ -400,6 +434,9 @@ class MainWindow(QMainWindow):
         if self._is_hidden:
             self.show()
             self._is_hidden = False
+            # 显示窗口时重启定时器
+            self._hide_timer.start(3000)
+            self._window_hide_timer.start(120000)
         else:
             self.hide()
             self._is_hidden = True
@@ -447,6 +484,89 @@ class MainWindow(QMainWindow):
         """上一行（兼容旧接口）"""
         self._prev_line()
 
+    def _hide_buttons(self):
+        """隐藏控制按钮"""
+        if self._buttons_visible:
+            for btn in self._control_buttons:
+                btn.hide()
+            self._line_label.hide()
+            self._buttons_visible = False
+
+    def _show_buttons(self):
+        """显示控制按钮"""
+        if not self._buttons_visible:
+            for btn in self._control_buttons:
+                btn.show()
+            self._line_label.show()
+            self._buttons_visible = True
+        # 重置隐藏定时器
+        self._hide_timer.stop()
+        self._hide_timer.start(3000)
+
+    def _reset_hide_timer(self):
+        """重置隐藏定时器（用户交互时调用）"""
+        if self._buttons_visible:
+            self._hide_timer.stop()
+            self._hide_timer.start(3000)
+        # 同时重置窗口隐藏定时器
+        self._reset_window_hide_timer()
+
+    def _reset_window_hide_timer(self):
+        """重置窗口隐藏定时器（任何用户活动时调用）"""
+        self._window_hide_timer.stop()
+        self._window_hide_timer.start(120000)  # 重置为2分钟
+
+    def _auto_hide_window(self):
+        """自动隐藏窗口（2分钟无操作）"""
+        if not self._is_hidden:
+            self.hide()
+            self._is_hidden = True
+            self.visibility_changed.emit(False)
+
+    def _detect_shake(self, pos):
+        """检测鼠标摇动"""
+        import time
+        current_time = int(time.time() * 1000)  # 毫秒时间戳
+
+        # 添加当前位置和时间
+        self._shake_positions.append((pos.x(), pos.y(), current_time))
+
+        # 移除超过时间窗口的旧位置
+        self._shake_positions = [
+            (x, y, t) for x, y, t in self._shake_positions
+            if current_time - t < self._shake_time_window
+        ]
+
+        # 需要至少6个位置点来检测3次摇动（左右左右左右）
+        if len(self._shake_positions) < 6:
+            return False
+
+        # 检测是否有3次大幅度左右摇动
+        shake_count = 0
+        direction = None  # 'left' 或 'right'
+
+        for i in range(1, len(self._shake_positions)):
+            x_prev, y_prev, _ = self._shake_positions[i-1]
+            x_curr, y_curr, _ = self._shake_positions[i]
+
+            x_diff = x_curr - x_prev
+
+            # 检测大幅度移动
+            if abs(x_diff) > self._shake_threshold:
+                current_direction = 'right' if x_diff > 0 else 'left'
+
+                # 如果方向改变，计数增加
+                if direction is not None and direction != current_direction:
+                    shake_count += 1
+                    if shake_count >= 3:
+                        # 检测到3次摇动，清空历史并隐藏窗口
+                        self._shake_positions.clear()
+                        return True
+
+                direction = current_direction
+
+        return False
+
     # 绘制圆角背景
     def paintEvent(self, event):
         """绘制窗口背景"""
@@ -469,10 +589,25 @@ class MainWindow(QMainWindow):
         painter.setPen(QPen(QColor(100, 100, 100, 100), 1))
         painter.drawPath(path)
 
-    # 鼠标拖动
+    # 鼠标事件
+    def enterEvent(self, event):
+        """鼠标进入窗口"""
+        self._show_buttons()
+        self._reset_window_hide_timer()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """鼠标离开窗口"""
+        # 鼠标离开后3秒隐藏按钮
+        self._hide_timer.stop()
+        self._hide_timer.start(3000)
+        super().leaveEvent(event)
+
     def mousePressEvent(self, event):
         """鼠标按下"""
         self.setFocus()  # 确保窗口获得焦点
+        self._reset_hide_timer()  # 重置隐藏定时器
+        self._reset_window_hide_timer()  # 重置窗口隐藏定时器
         if event.button() == Qt.LeftButton:
             self._is_dragging = True
             self._drag_position = event.globalPos() - self.frameGeometry().topLeft()
@@ -480,6 +615,18 @@ class MainWindow(QMainWindow):
 
     def mouseMoveEvent(self, event):
         """鼠标移动"""
+        # 检测鼠标摇动
+        if self._detect_shake(event.globalPos()):
+            # 检测到摇动，隐藏窗口
+            if not self._is_hidden:
+                self.hide()
+                self._is_hidden = True
+                self.visibility_changed.emit(False)
+            return
+
+        # 重置窗口隐藏定时器
+        self._reset_window_hide_timer()
+
         if self._is_dragging and event.buttons() == Qt.LeftButton:
             self.move(event.globalPos() - self._drag_position)
             event.accept()
@@ -494,6 +641,9 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event):
         """键盘按键 - 翻页"""
         key = event.key()
+
+        # 重置窗口隐藏定时器
+        self._reset_window_hide_timer()
 
         if key in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Down, Qt.Key_Right, Qt.Key_J):
             self._next_line()
@@ -525,6 +675,9 @@ class MainWindow(QMainWindow):
 
     def wheelEvent(self, event):
         """鼠标滚轮 - 翻页"""
+        # 重置窗口隐藏定时器
+        self._reset_window_hide_timer()
+
         delta = event.angleDelta().y()
         if delta > 0:
             self._prev_line()  # 向上滚动 = 上一行
